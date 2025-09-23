@@ -26,9 +26,22 @@ export default function ThreadsPage() {
             <tbody>
               {threads.map((t) => {
                 const latest = t.quotations[0];
-                const content = (latest?.content as Record<string, any>) || {};
-                const party = content.clientInfo?.name || content.client || content.partyName || "—";
-                const refId = t.userRefID || content.ref || content.reference || content.refId || "—";
+                const content = (latest?.content as Record<string, unknown>) || {};
+                const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+                let party = "—";
+                if (typeof (content as Record<string, unknown>).partyName === 'string') {
+                  party = (content as Record<string, unknown>).partyName as string;
+                } else if (isRecord((content as Record<string, unknown>).clientInfo) && typeof ((content as Record<string, unknown>).clientInfo as Record<string, unknown>).name === 'string') {
+                  party = ((content as Record<string, unknown>).clientInfo as Record<string, unknown>).name as string;
+                } else if (typeof (content as Record<string, unknown>).client === 'string') {
+                  party = (content as Record<string, unknown>).client as string;
+                }
+
+                let refId = t.userRefID || "—";
+                const rc = content as Record<string, unknown>;
+                if (typeof rc.ref === 'string') refId = rc.ref;
+                else if (typeof rc.reference === 'string') refId = rc.reference as string;
+                else if (typeof rc.refId === 'string') refId = rc.refId as string;
                 return (
                   <tr
                     key={t.threadId}

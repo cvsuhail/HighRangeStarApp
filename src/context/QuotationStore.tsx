@@ -4,7 +4,6 @@ import React, { createContext, useContext, useMemo, useState } from "react";
 import type {
   CreateQuotationData,
   Document,
-  DocumentType,
   Quotation,
   QuotationStatus,
   QuotationTemplate,
@@ -444,7 +443,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     uploadSignedDeliveryNote,
     generateInvoice,
     completeThread,
-  }), [threads, templates]);
+  }), [threads, templates, createQuotationWithTemplate, createInitialQuotation, handleDecline, undoDecline, createRevision, handleAcceptance, setFinalQuotation, updateQuotationContent, uploadPurchaseOrder, createDeliveryNote, uploadSignedDeliveryNote, generateInvoice, completeThread]);
 
   return <QuotationContext.Provider value={value}>{children}</QuotationContext.Provider>;
 };

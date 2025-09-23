@@ -9,11 +9,8 @@ import {
   query,
   orderBy,
   where,
-  limit,
-  startAfter,
   QueryDocumentSnapshot,
   DocumentData,
-  Timestamp,
 } from 'firebase/firestore';
 import { getFirestore } from './firebase';
 import type { Vessel, CreateVesselData, UpdateVesselData, VesselFilters } from '../types/vessel';
@@ -72,7 +69,6 @@ export class VesselService {
       if (filters.search) {
         // Note: Firestore doesn't support case-insensitive search natively
         // For production, consider using Algolia or implementing server-side search
-        const searchTerm = filters.search.toLowerCase();
         // We'll filter in memory for now, but this should be optimized
       }
 

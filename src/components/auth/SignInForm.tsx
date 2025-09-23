@@ -26,8 +26,9 @@ export default function SignInForm() {
     try {
       await signInWithEmail(email.trim(), password, isChecked);
       router.replace("/");
-    } catch (err: any) {
-      setError(err?.message || "Failed to sign in");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to sign in";
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -52,7 +53,7 @@ export default function SignInForm() {
                   <Label>
                     Email <span className="text-error-500">*</span>{" "}
                   </Label>
-                  <Input placeholder="info@gmail.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <Input placeholder="info@gmail.com" type="email" defaultValue={email} onChange={(e) => setEmail(e.target.value)} />
                 </div>
                 <div>
                   <Label>
@@ -62,7 +63,7 @@ export default function SignInForm() {
                     <Input
                       type={showPassword ? "text" : "password"}
                       placeholder="Enter your password"
-                      value={password}
+                      defaultValue={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
                     <span
@@ -95,7 +96,7 @@ export default function SignInForm() {
                   <p className="text-sm text-error-500">{error}</p>
                 )}
                 <div>
-                  <Button className="w-full" size="sm" type="submit" disabled={submitting}>
+                  <Button className="w-full" size="sm" disabled={submitting}>
                     {submitting ? "Signing in..." : "Sign in"}
                   </Button>
                 </div>

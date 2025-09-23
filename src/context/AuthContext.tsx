@@ -1,9 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { getFirebaseApp } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 import {
-  getAuth,
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
@@ -28,12 +27,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const app = getFirebaseApp();
-    if (!app) {
+    const auth = getFirebaseAuth();
+    if (!auth) {
       setLoading(false);
       return;
     }
-    const auth = getAuth(app);
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
       setLoading(false);
@@ -42,25 +40,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithEmail = async (email: string, password: string, remember: boolean) => {
-    const app = getFirebaseApp();
-    if (!app) throw new Error("Firebase not initialized on client");
-    const auth = getAuth(app);
+    const auth = getFirebaseAuth();
+    if (!auth) throw new Error("Firebase not initialized on client");
     await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
     await signInWithEmailAndPassword(auth, email, password);
   };
 
   const sendPasswordReset = async (email: string) => {
-    const app = getFirebaseApp();
-    if (!app) throw new Error("Firebase not initialized on client");
-    const auth = getAuth(app);
+    const auth = getFirebaseAuth();
+    if (!auth) throw new Error("Firebase not initialized on client");
     const { sendPasswordResetEmail } = await import("firebase/auth");
     await sendPasswordResetEmail(auth, email);
   };
 
   const logout = async () => {
-    const app = getFirebaseApp();
-    if (!app) return;
-    const auth = getAuth(app);
+    const auth = getFirebaseAuth();
+    if (!auth) return;
     await signOut(auth);
   };
 

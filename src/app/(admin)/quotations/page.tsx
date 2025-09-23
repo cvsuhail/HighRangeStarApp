@@ -3,7 +3,7 @@ import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuotationStore } from "@/context/QuotationStore";
-import ComponentCard from "@/components/common/ComponentCard";
+// Removed unused ComponentCard import
 import CreateQuotationForm from "@/components/quotation/CreateQuotationForm";
 
 const statusFilters = [
@@ -14,7 +14,7 @@ const statusFilters = [
 ] as const;
 
 export default function QuotationsListPage() {
-  const { threads, createRevision } = useQuotationStore();
+  const { threads } = useQuotationStore();
   const [filter, setFilter] = useState<(typeof statusFilters)[number]["key"]>("all");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const router = useRouter();
@@ -32,7 +32,7 @@ export default function QuotationsListPage() {
     return groupedByThread.filter(({ thread }) => thread.quotations.some((q) => q.status === filter));
   }, [groupedByThread, filter]);
 
-  const handleCreateSuccess = (threadId: string) => {
+  const handleCreateSuccess = () => {
     setShowCreateForm(false);
     // Optionally redirect to the thread detail page
     // router.push(`/quotations/${threadId}`);
@@ -114,9 +114,25 @@ export default function QuotationsListPage() {
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {filteredThreads.map(({ thread, latest }) => {
-              const content = latest?.content as any;
-              const total = content?.total || content?.items?.reduce((sum: number, item: any) => sum + (item.quantity * item.price), 0) || 0;
-              const client = content?.partyName || content?.clientInfo?.name || content?.client || '—';
+              const content = latest?.content as Record<string, unknown> | undefined;
+              type TotalItem = { quantity: number; price: number };
+              const items = (content && (content as { items?: unknown }).items) as TotalItem[] | undefined;
+              const totalFromItems = Array.isArray(items)
+                ? items.reduce((sum, item) => sum + (item.quantity * item.price), 0)
+                : 0;
+              const total = (content?.total as number | undefined) ?? totalFromItems;
+              const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+              let client = '—';
+              if (content) {
+                const c = content as Record<string, unknown>;
+                if (typeof c.partyName === 'string') {
+                  client = c.partyName as string;
+                } else if (isRecord(c.clientInfo) && typeof (c.clientInfo as Record<string, unknown>).name === 'string') {
+                  client = (c.clientInfo as Record<string, unknown>).name as string;
+                } else if (typeof c.client === 'string') {
+                  client = c.client as string;
+                }
+              }
               return (
                 <tr
                   key={`${thread.threadId}_main`}

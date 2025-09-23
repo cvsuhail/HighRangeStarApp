@@ -13,7 +13,7 @@ export default function QuotationThreadDetailPage() {
 
   const threadId = String(params?.threadId || "");
   const thread = useMemo(() => threads.find(t => t.threadId === threadId), [threads, threadId]);
-  const quotations = thread?.quotations ?? [];
+  const quotations = useMemo(() => thread?.quotations ?? [], [thread]);
 
   const [selectedId, setSelectedId] = useState<string | null>(quotations[0]?.id ?? null);
   const [isEditOpen, setIsEditOpen] = useState(false);

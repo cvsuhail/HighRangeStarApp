@@ -22,8 +22,9 @@ export default function ResetPasswordPage() {
     try {
       await sendPasswordReset(email.trim());
       setMessage("Password reset email sent. Check your inbox.");
-    } catch (err: any) {
-      setError(err?.message || "Failed to send reset email");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send reset email";
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -49,12 +50,12 @@ export default function ResetPasswordPage() {
                   <Label>
                     Email <span className="text-error-500">*</span>{" "}
                   </Label>
-                  <Input placeholder="you@example.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  <Input placeholder="you@example.com" type="email" defaultValue={email} onChange={(e) => setEmail(e.target.value)} />
                 </div>
                 {message && <p className="text-sm text-success-600">{message}</p>}
                 {error && <p className="text-sm text-error-500">{error}</p>}
                 <div className="flex items-center gap-3">
-                  <Button size="sm" type="submit" disabled={submitting}>
+                  <Button size="sm" disabled={submitting}>
                     {submitting ? "Sending..." : "Send reset link"}
                   </Button>
                   <Link href="/signin" className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400">

@@ -10,13 +10,23 @@ export default function VesselsPage() {
   const [vessels, setVessels] = useState<Vessel[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CreateVesselData>({ name: "", number: "", slnoFormat: "H##", code: "" });
+  const [codeEdited, setCodeEdited] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
   const isEditing = useMemo(() => !!editingId, [editingId]);
 
-  const resetForm = () => setForm({ name: "", number: "", slnoFormat: "H##", code: "" });
+  const resetForm = () => {
+    setForm({ name: "", number: "", slnoFormat: "H##", code: "" });
+    setCodeEdited(false);
+  };
+
+  const generateVesselCode = (name: string, number: string) => {
+    const firstAlpha = (name || "").trim().toUpperCase().replace(/[^A-Z]/g, "").charAt(0);
+    const digits = (number || "").replace(/[^0-9]/g, "");
+    return `${firstAlpha}${digits}`.trim();
+  };
 
   // Load vessels when authenticated
   useEffect(() => {
@@ -63,14 +73,14 @@ export default function VesselsPage() {
 
       if (isEditing) {
         // Check for duplicates before updating
-        const numberExists = await VesselService.checkVesselNumberExists(form.number, editingId);
-        const codeExists = await VesselService.checkVesselCodeExists(form.code, editingId);
+        const numberExists = await VesselService.checkVesselNumberExists(form.number, editingId ?? undefined);
+        const codeExists = await VesselService.checkVesselCodeExists(form.code, editingId ?? undefined);
         
         if (numberExists) return alert("Vessel number already exists");
         if (codeExists) return alert("Vessel code already exists");
 
-        const updatedVessel = await VesselService.updateVessel(editingId, form);
-        setVessels(prev => prev.map(v => v.id === editingId ? updatedVessel : v));
+        const updatedVessel = await VesselService.updateVessel(editingId!, { ...form, updatedAt: new Date().toISOString() });
+        setVessels(prev => prev.map(v => v.id === editingId! ? updatedVessel : v));
         setEditingId(null);
       } else {
         // Check for duplicates before creating
@@ -94,6 +104,7 @@ export default function VesselsPage() {
   const startEdit = (v: Vessel) => {
     setEditingId(v.id);
     setForm({ name: v.name, number: v.number, slnoFormat: v.slnoFormat, code: v.code });
+    setCodeEdited(true);
   };
 
   const remove = async (id: string) => {
@@ -161,11 +172,25 @@ export default function VesselsPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">Vessel Name</label>
-              <input value={form.name} onChange={(e)=>setForm({...form, name:e.target.value})} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+              <input value={form.name} onChange={(e)=>{
+                const name = e.target.value;
+                setForm((prev)=>{
+                  const next = { ...prev, name };
+                  if (!codeEdited) next.code = generateVesselCode(name, next.number);
+                  return next;
+                });
+              }} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">Vessel Number</label>
-              <input value={form.number} onChange={(e)=>setForm({...form, number:e.target.value})} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+              <input value={form.number} onChange={(e)=>{
+                const number = e.target.value;
+                setForm((prev)=>{
+                  const next = { ...prev, number };
+                  if (!codeEdited) next.code = generateVesselCode(next.name, number);
+                  return next;
+                });
+              }} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">SLNO Format</label>
@@ -174,7 +199,8 @@ export default function VesselsPage() {
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">Vessel Code</label>
-              <input value={form.code} onChange={(e)=>setForm({...form, code:e.target.value})} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+              <input value={form.code} onChange={(e)=>{ setCodeEdited(true); setForm({...form, code:e.target.value}); }} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+              <p className="mt-1 text-[11px] text-gray-500">Auto-generates from name and number (e.g., HALUL + 45 → H45). You can edit.</p>
             </div>
             <div className="flex items-center gap-2 justify-end">
               {isEditing && <button type="button" onClick={()=>{ setEditingId(null); resetForm(); }} className="px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700" disabled={loading}>Cancel</button>}

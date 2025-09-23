@@ -11,7 +11,7 @@ interface CreateQuotationFormProps {
 }
 
 export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuotationFormProps) {
-  const { templates, createQuotationWithTemplate, getNextRefID } = useQuotationStore();
+  const { createQuotationWithTemplate, getNextRefID } = useQuotationStore();
   const [formData, setFormData] = useState<CreateQuotationData>({
     userRefID: "",
     hrsContent: {
@@ -46,15 +46,15 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: keyof CreateQuotationData, value: unknown) => {
     setFormData(prev => ({
       ...prev,
       [field]: value,
-      hrsContent: field === 'userRefID' && prev.hrsContent ? { ...prev.hrsContent, refID: value } : prev.hrsContent,
+      hrsContent: field === 'userRefID' && prev.hrsContent ? { ...prev.hrsContent, refID: String(value) } : prev.hrsContent,
     }));
   };
 
-  const handleHRSChange = (field: string, value: any) => {
+  const handleHRSChange = (field: keyof CreateQuotationData['hrsContent'], value: unknown) => {
     setFormData(prev => ({
       ...prev,
       hrsContent: {
@@ -64,15 +64,15 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
     }));
   };
 
-  const handleItemChange = (index: number, field: string, value: any) => {
+  const handleItemChange = (index: number, field: 'slNo' | 'description' | 'qty' | 'unitPrice', value: unknown) => {
     setFormData(prev => ({
       ...prev,
       hrsContent: {
         ...prev.hrsContent!,
         items: prev.hrsContent!.items.map((item, i) => {
-          const updated = i === index ? { ...item, [field]: value } : item;
-          const qty = field === 'qty' && i === index ? (parseFloat(value) || 0) : updated.qty;
-          const unitPrice = field === 'unitPrice' && i === index ? (parseFloat(value) || 0) : updated.unitPrice;
+          const updated = i === index ? { ...item, [field]: value as never } : item;
+          const qty = field === 'qty' && i === index ? (Number(value) || 0) : updated.qty;
+          const unitPrice = field === 'unitPrice' && i === index ? (Number(value) || 0) : updated.unitPrice;
           return { ...updated, amount: (qty * unitPrice) };
         }),
       },
@@ -128,7 +128,7 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
     }
   };
 
-  const selectedTemplate = undefined;
+  // Single HRS template used; no selection needed
 
   function numberToWords(amount: number) {
     try {
