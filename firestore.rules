@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Vessels collection rules
+    match /vessels/{vesselId} {
+      // Allow read access to everyone (public) to enable client-side listing and duplicate checks
+      // NOTE: If you need to restrict reads, revert to `request.auth != null`
+      allow read: if true;
+      
+      // Allow create access to authenticated users
+      allow create: if request.auth != null
+        && validateVesselData(request.resource.data);
+      
+      // Allow update access to authenticated users
+      allow update: if request.auth != null
+        && validateVesselUpdateData(request.resource.data);
+      
+      // Allow delete access to authenticated users
+      allow delete: if request.auth != null;
+    }
+    
+    // Helper function to validate vessel data on create
+    function validateVesselData(data) {
+      return data.keys().hasAll(['name', 'number', 'slnoFormat', 'code', 'createdAt', 'updatedAt'])
+        && data.name is string
+        && data.number is string
+        && data.slnoFormat is string
+        && data.code is string
+        && data.createdAt is string
+        && data.updatedAt is string
+        && data.name.size() > 0
+        && data.number.size() > 0
+        && data.code.size() > 0
+        && data.slnoFormat.size() > 0;
+    }
+    
+    // Helper function to validate vessel data on update
+    function validateVesselUpdateData(data) {
+      return data.keys().hasAny(['name', 'number', 'slnoFormat', 'code', 'updatedAt'])
+        && (!('name' in data) || (data.name is string && data.name.size() > 0))
+        && (!('number' in data) || (data.number is string && data.number.size() > 0))
+        && (!('code' in data) || (data.code is string && data.code.size() > 0))
+        && (!('slnoFormat' in data) || (data.slnoFormat is string && data.slnoFormat.size() > 0))
+        && data.updatedAt is string;
+    }
+    
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
