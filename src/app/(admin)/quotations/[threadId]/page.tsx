@@ -61,16 +61,62 @@ export default function QuotationThreadDetailPage() {
     return () => { mounted = false; };
   }, [threadId]);
 
+  const refreshThreadData = async () => {
+    try {
+      const { getFirestore } = await import("@/lib/firebase");
+      const db = getFirestore();
+      if (!db) return;
+      const { doc, getDoc, collection, getDocs, query, orderBy } = await import("firebase/firestore");
+      const tRef = doc(db as any, "quotationThreads", threadId);
+      const tSnap = await getDoc(tRef);
+      if (tSnap.exists()) {
+        const tData = tSnap.data() as Record<string, unknown>;
+        setFsThread({ threadId: (tData.threadId as string) || tSnap.id, userRefID: (tData.userRefID as string) || undefined, status: (tData.status as string) || undefined });
+      }
+      const qCol = collection(tRef, "quotations");
+      const qSnap = await getDocs(query(qCol, orderBy("createdAt", "desc")));
+      const list: Quotation[] = [];
+      qSnap.forEach(qd => {
+        const qv = qd.data() as Record<string, unknown>;
+        list.push({
+          id: qd.id,
+          threadId,
+          version: String(qv.version || "Quotation"),
+          status: String(qv.status || "pending") as any,
+          content: (qv.content as Record<string, unknown>) || {},
+          createdAt: new Date().toISOString(),
+          isFinal: Boolean(qv.isFinal),
+        });
+      });
+      setFsQuotations(list);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to refresh thread data:", e);
+    }
+  };
+
   const thread = fsThread || storeThread;
-  const quotations = fsQuotations.length > 0 ? fsQuotations : storeQuotations;
+  const quotations = (fsQuotations && fsQuotations.length > 0) ? fsQuotations : storeQuotations;
+  const isSingleQuotation = quotations.length <= 1;
 
   const [selectedId, setSelectedId] = useState<string | null>(quotations[0]?.id ?? null);
+  // Keep selection in sync when quotations list changes, prefer newest first item
+  useEffect(() => {
+    if (!quotations || quotations.length === 0) return;
+    const exists = quotations.some(q => q.id === selectedId);
+    if (!exists) {
+      setSelectedId(quotations[0]?.id ?? null);
+    }
+  }, [quotations]);
   // Revision modal state
   const [isRevOpen, setIsRevOpen] = useState(false);
   const [revDraft, setRevDraft] = useState<HRSQuotationContent | null>(null);
   // Delete confirm modal state
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  // Attractive action loading overlay state (UI only)
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string>("");
   const previewRef = useRef<HTMLDivElement>(null);
   const selectedQuotation: Quotation | undefined = useMemo(
     () => quotations.find(q => q.id === selectedId) || quotations[0],
@@ -83,11 +129,24 @@ export default function QuotationThreadDetailPage() {
   const isDeclinedThread = thread?.status === "QuotationDeclined";
 
   const canCreateRevision = !!selectedQuotation && !isDeclinedThread;
-  const canMarkAsFinal = !!selectedQuotation && !selectedQuotation.isFinal && !isDeclinedThread;
   const canMarkAsDeclined = !isDeclinedThread;
   // Edit removed: latest selection no longer needed
 
   // Stepper UI was moved to thread detail page. Keep quotation detail focused on versions list.
+  const selectedIndex = useMemo(() => {
+    const idx = quotations.findIndex(q => q.id === selectedQuotation?.id);
+    return idx >= 0 ? idx : 0;
+  }, [quotations, selectedQuotation]);
+
+  // For stepper: show oldest -> newest to make progress sense
+  const stepperQuotations = useMemo(() => {
+    return quotations.slice().reverse();
+  }, [quotations]);
+  const activeStepperIndex = useMemo(() => {
+    const id = selectedQuotation?.id;
+    const idx = stepperQuotations.findIndex(q => q.id === id);
+    return idx >= 0 ? idx : stepperQuotations.length - 1;
+  }, [stepperQuotations, selectedQuotation]);
 
   const onCreateRevision = async () => {
     if (!selectedQuotation) return;
@@ -112,10 +171,18 @@ export default function QuotationThreadDetailPage() {
       total: revDraft.items.reduce((s, it) => s + it.qty * it.unitPrice, 0),
       items: revDraft.items.map(it => ({ ...it, amount: it.qty * it.unitPrice })),
     } as unknown as Record<string, unknown>;
-    const newQ = await createRevision(thread.threadId, selectedQuotation.id, computed);
-    if (newQ) {
-      setSelectedId(newQ.id);
-      setIsRevOpen(false);
+    try {
+      setActionMessage("Creating revision...");
+      setIsActionLoading(true);
+      const newQ = await createRevision(thread.threadId, selectedQuotation.id, computed);
+      if (newQ) {
+        setSelectedId(newQ.id);
+        setIsRevOpen(false);
+        await refreshThreadData();
+      }
+    } finally {
+      setIsActionLoading(false);
+      setActionMessage("");
     }
   };
 
@@ -127,21 +194,24 @@ export default function QuotationThreadDetailPage() {
 
   const onConfirmDelete = async () => {
     if (!thread || !deleteTargetId) return;
-    await deleteQuotation(thread.threadId, deleteTargetId);
-    const remaining = quotations.filter(q => q.id !== deleteTargetId);
-    setSelectedId(remaining[0]?.id ?? null);
-    setIsDeleteOpen(false);
-    setDeleteTargetId(null);
+    try {
+      setActionMessage("Deleting quotation...");
+      setIsActionLoading(true);
+      await deleteQuotation(thread.threadId, deleteTargetId);
+      await refreshThreadData();
+      const remaining = quotations.filter(q => q.id !== deleteTargetId);
+      setSelectedId(remaining[0]?.id ?? null);
+      setIsDeleteOpen(false);
+      setDeleteTargetId(null);
+    } finally {
+      setIsActionLoading(false);
+      setActionMessage("");
+    }
   };
 
   const onCancelDelete = () => {
     setIsDeleteOpen(false);
     setDeleteTargetId(null);
-  };
-
-  const onMarkAsFinal = () => {
-    if (!selectedQuotation || !thread) return;
-    setFinalQuotation(thread.threadId, selectedQuotation.id);
   };
 
   const onMarkAsDeclined = () => {
@@ -163,22 +233,73 @@ export default function QuotationThreadDetailPage() {
     const refId = (content?.refID || thread?.userRefID || thread?.threadId || "quotation").toString();
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
-    printWindow.document.write(`<!doctype html><html><head><title>${refId}</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><style>html,body{background:#fff;margin:0;padding:0} @page{size:A4;margin:10mm} .print\-wrap{display:flex;justify-content:center;padding:0} </style></head><body><div class="print-wrap"></div></body></html>`);
-    const container = printWindow.document.body.querySelector(".print-wrap");
-    if (container) {
-      const clone = previewRef.current.cloneNode(true) as HTMLElement;
-      clone.style.margin = "0 auto";
-      clone.style.overflow = "visible";
-      clone.style.background = "#fff";
-      clone.style.width = "100%";
-      container.appendChild(clone);
+    // Copy styles from current document so Tailwind and component CSS are available
+    const styleNodes = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')) as HTMLElement[];
+    const headStyles = styleNodes.map(node => node.outerHTML).join("");
+    // Use the inner HTML of the preview content to avoid container padding clipping
+    const clone = previewRef.current.cloneNode(true) as HTMLElement;
+    clone.classList.remove('p-4');
+    const printableInner = clone.innerHTML || previewRef.current.innerHTML;
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset=\"utf-8\" />
+    <title></title>
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>
+    ${headStyles}
+    <style>
+      html, body { background: #fff; margin: 0; padding: 0; }
+      @page { size: A4 portrait; margin: 0; }
+      .print-page { display: block; width: 100%; }
+      .print-content { width: 210mm; margin: 0 auto; padding: 0; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+      img, svg { break-inside: avoid; page-break-inside: avoid; }
+      @media print {
+        html, body, .print-page, .print-content { height: auto !important; overflow: visible !important; }
+        .print-page, .print-content { page-break-before: avoid !important; page-break-after: avoid !important; page-break-inside: avoid !important; }
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class=\"print-page\">
+      <div class=\"print-content\">${printableInner}</div>
+    </div>
+  </body>
+  </html>`;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.title = '';
+    const waitForImages = async () => {
+      const imgs = Array.from(printWindow.document.images || []);
+      const pending = imgs.filter(img => !img.complete || img.naturalWidth === 0);
+      if (pending.length === 0) return;
+      await Promise.all(
+        pending.map(img => new Promise(resolve => {
+          const onDone = () => { img.removeEventListener('load', onDone); img.removeEventListener('error', onDone); resolve(null); };
+          img.addEventListener('load', onDone);
+          img.addEventListener('error', onDone);
+        }))
+      );
+    };
+    const afterLoad = async () => {
+      try {
+        await waitForImages();
+        printWindow.requestAnimationFrame(() => {
+          try {
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+          } catch (_) {}
+        });
+      } catch (_) {}
+    };
+    // Ensure we wait for the new document to be fully loaded
+    if (printWindow.document.readyState === 'complete') {
+      afterLoad();
+    } else {
+      printWindow.addEventListener('load', afterLoad, { once: true });
     }
-    // Give time for images to load
-    setTimeout(() => {
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-    }, 300);
   };
 
   if (!thread) {
@@ -199,6 +320,15 @@ export default function QuotationThreadDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Local UI animations (UI-only) */}
+      <style jsx>{`
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in-up { animation: fadeInUp .35s ease both; }
+        @keyframes softPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.0);} 50% { box-shadow: 0 0 0 6px rgba(59,130,246,0.08);} }
+        .soft-pulse { animation: softPulse 1.8s ease-in-out infinite; }
+        @keyframes hrspin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .hrs-loader { width: 56px; height: 56px; border-radius: 9999px; border-width: 3px; border-style: solid; border-color: rgba(99,102,241,0.25); border-top-color: rgba(99,102,241,1); animation: hrspin 0.9s linear infinite; }
+      `}</style>
       <div className="flex items-center justify-between">
         <button onClick={() => router.back()} className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
           <span className="inline-block rotate-180">➔</span>
@@ -243,9 +373,10 @@ export default function QuotationThreadDetailPage() {
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-gray-900 dark:text-white truncate flex items-center gap-2">
-                          <span>{q.version}{q.isFinal ? ' (Final)' : ''}</span>
+                          <span>{(() => { const idxChrono = stepperQuotations.findIndex(x => x.id === q.id); return idxChrono <= 0 ? 'Quotation' : `QuotationR${idxChrono}`; })()}{q.isFinal ? ' (Final)' : ''}</span>
                           {selectedQuotation?.id === q.id && <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] rounded bg-brand-100 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">Selected</span>}
                         </div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">Ref: {(() => { const c = (q.content || {}) as Record<string, unknown>; const rv = c.refID as string | undefined; return rv || thread.userRefID || thread.threadId; })()}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">{(() => {
                           const anyQ: any = q as any;
                           const ts = anyQ.createdAt && typeof anyQ.createdAt === 'object' && typeof anyQ.createdAt.toDate === 'function' ? anyQ.createdAt.toDate() : (typeof anyQ.createdAt === 'string' || typeof anyQ.createdAt === 'number' ? new Date(anyQ.createdAt) : undefined);
@@ -256,13 +387,6 @@ export default function QuotationThreadDetailPage() {
                         <span className={`px-2 py-1 text-[10px] rounded-full ${q.status === 'accepted' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' : q.status === 'declined' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' : 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'}`}>
                           {q.status}
                         </span>
-                        <button
-                          onClick={(e)=>{ e.stopPropagation(); setSelectedId(q.id); setDeleteTargetId(q.id); setIsDeleteOpen(true); }}
-                          className="ml-1 inline-flex items-center px-2 py-1 text-[10px] rounded border border-red-200 dark:border-red-800 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30"
-                          aria-label="Delete quotation"
-                        >
-                          Delete
-                        </button>
                       </div>
                     </div>
                   </li>
@@ -275,23 +399,26 @@ export default function QuotationThreadDetailPage() {
               </div>
 
           <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 md:gap-3">
+              <div className="flex flex-wrap items-center gap-2.5 md:gap-3">
               <button onClick={onCreateRevision} disabled={!canCreateRevision} className={`h-9 px-3 rounded-md text-sm font-medium border transition-all ${canCreateRevision ? 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 hover:shadow-sm active:scale-[0.98]' : 'border-gray-100 dark:border-gray-800 text-gray-400 cursor-not-allowed'}`}>
                 Create Revision
-              </button>
-              <button onClick={onMarkAsFinal} disabled={!canMarkAsFinal} className={`h-9 px-3 rounded-md text-sm font-medium transition-all ${canMarkAsFinal ? 'text-white bg-brand-600 hover:bg-brand-500 shadow-sm active:scale-[0.98]' : 'bg-gray-200/60 dark:bg-gray-800 text-gray-400 cursor-not-allowed'}`}>
-                Mark as Final
               </button>
               <button onClick={onMarkAsDeclined} disabled={!canMarkAsDeclined} className={`h-9 px-3 rounded-md text-sm font-medium border transition-all ${canMarkAsDeclined ? 'border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/30 hover:shadow-sm active:scale-[0.98]' : 'border-gray-100 text-gray-400 cursor-not-allowed'}`}>
                 Mark as Declined
               </button>
-              <div className="w-px h-6 bg-gray-200 dark:bg-gray-800 mx-0.5" />
-              <button onClick={onDeleteSelected} disabled={!selectedQuotation} className={`h-9 px-3 rounded-md text-sm font-medium border transition-all ${selectedQuotation ? 'border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30' : 'border-gray-100 text-gray-400 cursor-not-allowed'}`}>Delete</button>
-              <button onClick={onDownloadPdf} className="h-9 px-3 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 hover:shadow-sm active:scale-[0.98]">Download</button>
-              <button onClick={()=>alert('Share feature coming soon')} className="h-9 px-3 rounded-md text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 hover:shadow-sm active:scale-[0.98]">Share</button>
+              </div>
+              <div className="flex items-center gap-2.5 md:gap-3">
+                <button onClick={onDownloadPdf} className="h-9 px-3 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 hover:shadow-sm active:scale-[0.98]">Download</button>
+                <button onClick={()=>alert('Share feature coming soon')} className="h-9 px-3 rounded-md text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 hover:shadow-sm active:scale-[0.98]">Share</button>
+                <button onClick={onDeleteSelected} disabled={!selectedQuotation || isSingleQuotation} className={`h-9 px-3 rounded-md text-sm font-medium border transition-all ${!selectedQuotation || isSingleQuotation ? 'border-gray-100 text-gray-400 cursor-not-allowed' : 'border-red-200 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30'}`}>Delete</button>
+              </div>
             </div>
             {isDeclinedThread && (
               <div className="mt-3 text-xs text-rose-600 dark:text-rose-400">Thread is declined. Actions are disabled.</div>
+            )}
+            {!isDeclinedThread && isSingleQuotation && (
+              <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">At least one quotation must remain. Delete is disabled.</div>
             )}
           </div>
         </div>
@@ -302,7 +429,7 @@ export default function QuotationThreadDetailPage() {
               <div className="text-sm font-semibold text-gray-900 dark:text-white">Preview</div>
               {selectedQuotation?.isFinal && <span className="text-xs px-2 py-1 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">Final</span>}
                 </div>
-            <div className="p-4 overflow-auto" ref={previewRef}>
+            <div key={selectedQuotation?.id} className="p-4 overflow-auto fade-in-up" ref={previewRef}>
               {content ? (
                 <div className="w-full flex justify-center">
                   <HRSQuotationTemplate content={content} />
@@ -316,7 +443,7 @@ export default function QuotationThreadDetailPage() {
       </div>
 
       {isRevOpen && revDraft && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-99999 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setIsRevOpen(false)}></div>
           <div className="relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xl">
             <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
@@ -386,7 +513,7 @@ export default function QuotationThreadDetailPage() {
       )}
 
       {isDeleteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-99999 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={onCancelDelete}></div>
           <div className="relative z-10 w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xl">
             <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
@@ -398,6 +525,18 @@ export default function QuotationThreadDetailPage() {
             <div className="px-5 py-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-2">
               <button onClick={onCancelDelete} className="px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200">Cancel</button>
               <button onClick={onConfirmDelete} className="px-3 py-2 text-sm rounded-lg bg-red-600 text-white">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isActionLoading && (
+        <div className="fixed inset-0 z-[100000]">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+          <div className="relative h-full w-full flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-2xl px-6 py-8 text-center fade-in-up">
+              <div className="mx-auto hrs-loader"></div>
+              <div className="mt-4 text-sm font-medium text-gray-900 dark:text-white">{actionMessage || 'Processing...'}</div>
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">Please wait while we update your quotation.</div>
             </div>
           </div>
         </div>

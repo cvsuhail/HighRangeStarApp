@@ -48,6 +48,7 @@ export class QuotationService {
         threadId,
         userRefID: payload.userRefID,
         status: 'QuotationCreated',
+        clientName: payload.hrsContent.partyName,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       },
@@ -72,6 +73,7 @@ export class QuotationService {
       threadId,
       userRefID: payload.userRefID,
       status: 'QuotationCreated',
+      clientName: payload.hrsContent.partyName,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -174,6 +176,48 @@ export class QuotationService {
     const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
     await updateDoc(threadRef, {
       finalQuotationId: quotationId,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  /** Update the thread status string */
+  static async setThreadStatus(threadId: string, status: string): Promise<void> {
+    const db = this.getDb();
+    const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
+    await updateDoc(threadRef, {
+      status,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  /** Mark a specific quotation document's isFinal flag */
+  static async setQuotationIsFinal(threadId: string, quotationId: string, isFinal = true): Promise<void> {
+    const db = this.getDb();
+    const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
+    const qRef = doc(collection(threadRef, 'quotations'), quotationId);
+    await updateDoc(qRef, {
+      isFinal,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  /** Update a specific quotation document's status */
+  static async setQuotationStatus(threadId: string, quotationId: string, status: 'pending' | 'accepted' | 'declined'): Promise<void> {
+    const db = this.getDb();
+    const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
+    const qRef = doc(collection(threadRef, 'quotations'), quotationId);
+    await updateDoc(qRef, {
+      status,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  /** Persist the current active step on the thread document */
+  static async setThreadActiveStep(threadId: string, activeStep: number): Promise<void> {
+    const db = this.getDb();
+    const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
+    await updateDoc(threadRef, {
+      activeStep,
       updatedAt: serverTimestamp(),
     });
   }

@@ -78,7 +78,9 @@ export function VesselNameInput({
 
     try {
       setIsLoading(true);
+      console.log('Loading suggestions for:', searchTerm);
       const vessels = await VesselService.searchVesselsByName(searchTerm, 10);
+      console.log('Found vessels:', vessels);
       setSuggestions(vessels);
     } catch (error) {
       console.error('Error loading vessel suggestions:', error);
@@ -136,7 +138,11 @@ export function VesselNameInput({
 
   // Handle suggestion selection
   const selectSuggestion = (vessel: Vessel) => {
-    onChange(vessel.name.toUpperCase());
+    console.log('selectSuggestion called with vessel:', vessel);
+    // Display full vessel name with number format (e.g., HALUL-45)
+    const displayValue = `${vessel.name.toUpperCase()}-${vessel.number}`;
+    console.log('Setting display value:', displayValue);
+    onChange(displayValue);
     onVesselParsed?.({
       name: vessel.name.toUpperCase(),
       number: vessel.number,
@@ -178,10 +184,17 @@ export function VesselNameInput({
   // Handle click outside to close suggestions
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (inputRef.current && !inputRef.current.contains(event.target as Node)) {
-        setShowSuggestions(false);
-        setSelectedIndex(-1);
-      }
+      // Use setTimeout to ensure suggestion clicks are processed first
+      setTimeout(() => {
+        const target = event.target as Node;
+        // Check if click is outside both input and suggestions dropdown
+        if (inputRef.current && 
+            !inputRef.current.contains(target) && 
+            !inputRef.current.parentElement?.contains(target)) {
+          setShowSuggestions(false);
+          setSelectedIndex(-1);
+        }
+      }, 0);
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -249,7 +262,12 @@ export function VesselNameInput({
                   ? 'bg-brand-100 dark:bg-brand-900 text-brand-900 dark:text-brand-100'
                   : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700'
               }`}
-              onClick={() => selectSuggestion(vessel)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Suggestion clicked:', vessel);
+                selectSuggestion(vessel);
+              }}
               onMouseEnter={() => setSelectedIndex(index)}
             >
               <div className="font-medium">{vessel.name}</div>

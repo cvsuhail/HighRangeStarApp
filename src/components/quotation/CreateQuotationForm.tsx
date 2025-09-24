@@ -5,6 +5,8 @@ import { useQuotationStore } from "@/context/QuotationStore";
 import type { CreateQuotationData } from "@/types/quotation";
 import HRSQuotationTemplate from "./HRSQuotationTemplate";
 import { VesselNameInput } from "@/components/form/vessel-name-input";
+import DatePickerModal from "@/components/form/DatePickerModal";
+import RichTextEditor from "@/components/form/RichTextEditor";
 
 interface CreateQuotationFormProps {
   onSuccess?: (threadId: string) => void;
@@ -15,6 +17,7 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
   const { createQuotationWithTemplate, getNextRefID } = useQuotationStore();
   const [baseRef, setBaseRef] = useState("");
   const [vesselCode, setVesselCode] = useState("");
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [formData, setFormData] = useState<CreateQuotationData>({
     userRefID: "",
     hrsContent: {
@@ -97,7 +100,10 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
       ...prev,
       hrsContent: {
         ...prev.hrsContent!,
-        items: [...prev.hrsContent!.items, { slNo: `H${String(prev.hrsContent!.items.length + 1).padStart(2,'0')}`, description: "", qty: 1, unitPrice: 0, amount: 0 }],
+        items: [
+          ...prev.hrsContent!.items,
+          { slNo: `H${String(prev.hrsContent!.items.length + 1).padStart(2, '0')}` , description: "", qty: 1, unitPrice: 0, amount: 0 },
+        ],
       },
     }));
   };
@@ -108,11 +114,30 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
         ...prev,
         hrsContent: {
           ...prev.hrsContent!,
-          items: prev.hrsContent!.items.filter((_, i) => i !== index),
+          items: prev
+            .hrsContent!
+            .items
+            .filter((_, i) => i !== index)
+            .map((it, i) => ({ ...it, slNo: `H${String(i + 1).padStart(2, '0')}` })),
         },
       }));
     }
   };
+
+  // Auto-fill total amount in words whenever items change
+  useEffect(() => {
+    if (!formData.hrsContent) return;
+    const total = formData.hrsContent.items.reduce((sum, it) => sum + (it.amount || 0), 0);
+    const words = total > 0 ? numberToWords(total) : "";
+    setFormData(prev => ({
+      ...prev,
+      hrsContent: {
+        ...prev.hrsContent!,
+        totalAmountInWords: words,
+      },
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.hrsContent!.items]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,11 +169,61 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
   // Single HRS template used; no selection needed
 
   function numberToWords(amount: number) {
+    const toWords = (num: number): string => {
+      const units = [
+        "zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"
+      ];
+      const tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+
+      const chunkToWords = (n: number): string => {
+        const parts: string[] = [];
+        if (n >= 100) {
+          const h = Math.floor(n / 100);
+          parts.push(`${units[h]} hundred`);
+          n = n % 100;
+          if (n > 0) parts.push("and");
+        }
+        if (n >= 20) {
+          const t = Math.floor(n / 10);
+          const u = n % 10;
+          parts.push(u ? `${tens[t]} ${units[u]}` : tens[t]);
+        } else if (n > 0) {
+          parts.push(units[n]);
+        } else if (parts.length === 0) {
+          parts.push(units[0]);
+        }
+        return parts.join(" ");
+      };
+
+      if (num === 0) return "zero";
+
+      const scales = ["", "thousand", "million", "billion", "trillion"];
+      const words: string[] = [];
+      let scaleIndex = 0;
+      while (num > 0) {
+        const chunk = num % 1000;
+        if (chunk !== 0) {
+          const chunkWords = chunkToWords(chunk);
+          const withScale = scales[scaleIndex] ? `${chunkWords} ${scales[scaleIndex]}` : chunkWords;
+          words.unshift(withScale);
+        }
+        num = Math.floor(num / 1000);
+        scaleIndex += 1;
+      }
+
+      // Insert "AND" between the last two groups to match the requested style
+      if (words.length > 1) {
+        const last = words.pop();
+        words.push("and", last as string);
+      }
+
+      return words.join(" ");
+    };
+
     try {
       const whole = Math.floor(amount);
-      // very lightweight words (EN)
-      const formatter = new Intl.NumberFormat('en-US');
-      return `${formatter.format(whole)} QATAR RIYALS ONLY.`;
+      const wordsUpper = toWords(whole).toUpperCase();
+      return `${wordsUpper} QATAR RIYALS ONLY.`;
     } catch {
       return `${amount.toFixed(2)} QATAR RIYALS ONLY.`;
     }
@@ -171,24 +246,6 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
               Provide party details, items, and terms. Live preview updates in real time.
             </p>
-          </div>
-        </div>
-        
-        {/* Progress indicator */}
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-brand-500"></div>
-            <span>Basic Info</span>
-          </div>
-          <div className="w-8 h-px bg-gray-200 dark:bg-gray-600"></div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600"></div>
-            <span>Items & Terms</span>
-          </div>
-          <div className="w-8 h-px bg-gray-200 dark:bg-gray-600"></div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600"></div>
-            <span>Preview</span>
           </div>
         </div>
       </div>
@@ -338,20 +395,39 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Date</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                <span>Date</span>
+              </label>
               <div className="relative">
-                <input 
-                  type="date" 
-                  value={new Date(formData.hrsContent!.date).toISOString().slice(0,10)} 
-                  onChange={(e)=>handleHRSChange('date', new Date(e.target.value).toISOString())} 
-                  className="w-full px-4 py-3 pl-12 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
-                />
-                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                <button
+                  type="button"
+                  onClick={() => setIsDatePickerOpen(true)}
+                  className="w-full px-12 py-3 border border-gray-200 dark:border-gray-600 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500 cursor-pointer text-left"
+                >
+                  {new Date(formData.hrsContent!.date).toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  })}
+                </button>
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
               </div>
+              <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Click to open date picker
+              </p>
             </div>
           </div>
         </div>
@@ -379,69 +455,81 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
             </button>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {formData.hrsContent!.items.map((item, index) => (
-              <div key={index} className="group grid grid-cols-12 gap-4 items-end p-5 border border-gray-200 dark:border-gray-600 rounded-xl bg-gradient-to-r from-white via-gray-50/50 to-white dark:from-gray-800/50 dark:via-gray-800/30 dark:to-gray-800/50 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-500 transition-all duration-200">
-                <div className="col-span-12 md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">SL No.</label>
-                  <input 
-                    type="text" 
-                    value={item.slNo} 
-                    onChange={(e)=>handleItemChange(index, 'slNo', e.target.value)} 
-                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
-                  />
-                </div>
-                <div className="col-span-12 md:col-span-5">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Description</label>
-                  <input 
-                    type="text" 
-                    value={item.description} 
-                    onChange={(e)=>handleItemChange(index, 'description', e.target.value)} 
-                    placeholder="Item details" 
-                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
-                  />
-                </div>
-                <div className="col-span-6 md:col-span-1">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Qty</label>
-                  <input 
-                    type="number" 
-                    min="0" 
-                    value={item.qty} 
-                    onChange={(e)=>handleItemChange(index, 'qty', parseFloat(e.target.value) || 0)} 
-                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
-                  />
-                </div>
-                <div className="col-span-6 md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Unit Price</label>
-                  <div className="relative">
+              <div key={index} className="group p-5 border border-gray-200 dark:border-gray-600 rounded-xl bg-gradient-to-r from-white via-gray-50/50 to-white dark:from-gray-800/50 dark:via-gray-800/30 dark:to-gray-800/50 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-500 transition-all duration-200">
+                {/* First Row - Basic Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end mb-4">
+                  <div className="col-span-12 md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">SL No.</label>
+                    <input 
+                      type="text" 
+                      value={item.slNo} 
+                      onChange={(e)=>handleItemChange(index, 'slNo', e.target.value)} 
+                      className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
+                    />
+                  </div>
+                  
+                  <div className="col-span-6 md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Qty</label>
                     <input 
                       type="number" 
                       min="0" 
-                      step="0.01" 
-                      value={item.unitPrice} 
-                      onChange={(e)=>handleItemChange(index, 'unitPrice', parseFloat(e.target.value) || 0)} 
-                      className="w-full pr-12 px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
+                      value={item.qty} 
+                      onChange={(e)=>handleItemChange(index, 'qty', parseFloat(e.target.value) || 0)} 
+                      className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/20 px-2 py-0.5 rounded">QAR</span>
+                  </div>
+                  
+                  <div className="col-span-6 md:col-span-3">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Unit Price</label>
+                    <div className="relative">
+                      <input 
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={item.unitPrice === 0 ? '' : item.unitPrice}
+                        onChange={(e)=>handleItemChange(index, 'unitPrice', parseFloat(e.target.value) || 0)}
+                        className="w-full pr-12 px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/20 px-2 py-0.5 rounded">QAR</span>
+                    </div>
+                  </div>
+                  
+                  <div className="col-span-12 md:col-span-4">
+                    <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Amount</div>
+                    <div className="px-3 py-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                      <div className="font-bold text-lg text-brand-600 dark:text-brand-400">{item.amount.toFixed(2)}</div>
+                    </div>
+                  </div>
+                  
+                  <div className="col-span-12 md:col-span-1">
+                    <button
+                      type="button"
+                      onClick={() => removeItem(index)}
+                      disabled={formData.hrsContent!.items.length === 1}
+                      className="w-full px-3 py-2.5 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-300 dark:hover:border-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 group-hover:opacity-100 opacity-70"
+                    >
+                      <svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
-                <div className="col-span-12 md:col-span-1">
-                  <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Amount</div>
-                  <div className="px-3 py-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <div className="font-bold text-lg text-brand-600 dark:text-brand-400">{item.amount.toFixed(2)}</div>
+
+                {/* Second Row - Description */}
+                <div className="col-span-12">
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Description</label>
+                  <div className="relative">
+                    <RichTextEditor
+                      value={item.description}
+                      onChange={(value) => handleItemChange(index, 'description', value)}
+                      placeholder="Enter item details with rich formatting..."
+                      className="w-full"
+                    />
                   </div>
-                </div>
-                <div className="col-span-12 md:col-span-1">
-                  <button
-                    type="button"
-                    onClick={() => removeItem(index)}
-                    disabled={formData.hrsContent!.items.length === 1}
-                    className="w-full px-3 py-2.5 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-300 dark:hover:border-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 group-hover:opacity-100 opacity-70"
-                  >
-                    <svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
                 </div>
               </div>
             ))}
@@ -462,17 +550,26 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
                 <div className="text-3xl font-bold text-brand-600 dark:text-brand-400">
                   {formData.hrsContent!.items.reduce((sum, it) => sum + it.amount, 0).toFixed(2)} QAR
                 </div>
-                <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                  {formData.hrsContent!.items.reduce((sum, it) => sum + it.amount, 0).toLocaleString()} Qatari Riyals
-                </div>
               </div>
             </div>
-            <div className="mt-4 p-4 bg-white/80 dark:bg-gray-800/80 rounded-lg border border-gray-200 dark:border-gray-600">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Total Amount In Words</label>
+              <div className="relative">
+                <input 
+                  type="text" 
+                  value={formData.hrsContent!.totalAmountInWords} 
+                  onChange={(e)=>handleHRSChange('totalAmountInWords', e.target.value)} 
+                  placeholder="e.g., TEN-THOUSAND AND SIX HUNDRED QATAR RIYALS ONLY." 
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
+                />
+              </div>
+            </div>
+            {/* <div className="mt-4 p-4 bg-white/80 dark:bg-gray-800/80 rounded-lg border border-gray-200 dark:border-gray-600">
               <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount in Words:</div>
               <div className="text-sm text-gray-800 dark:text-gray-200 italic">
                 {numberToWords(formData.hrsContent!.items.reduce((sum, it) => sum + it.amount, 0))}
               </div>
-            </div>
+            </div> */}
           </div>
         </div>
 
@@ -490,53 +587,32 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Note</label>
-              <div className="relative">
-                <textarea 
-                  value={formData.hrsContent!.note} 
-                  onChange={(e)=>handleHRSChange('note', e.target.value)} 
-                  placeholder="Additional information for the client" 
-                  className="w-full min-h-[100px] px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500 resize-none" 
-                />
-                <div className="absolute top-3 left-3">
-                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </div>
-              </div>
+              <RichTextEditor
+                value={formData.hrsContent!.note}
+                onChange={(value) => handleHRSChange('note', value)}
+                placeholder="Additional information for the client"
+                className="w-full"
+              />
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Delivery Terms</label>
-              <div className="relative">
-                <textarea 
-                  value={formData.hrsContent!.deliveryTerms} 
-                  onChange={(e)=>handleHRSChange('deliveryTerms', e.target.value)} 
-                  placeholder="Delivery time, location, and conditions" 
-                  className="w-full min-h-[100px] px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500 resize-none" 
-                />
-                <div className="absolute top-3 left-3">
-                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
-                </div>
-              </div>
+              <RichTextEditor
+                value={formData.hrsContent!.deliveryTerms}
+                onChange={(value) => handleHRSChange('deliveryTerms', value)}
+                placeholder="Delivery time, location, and conditions"
+                className="w-full"
+              />
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Payment Terms</label>
-              <div className="relative">
-                <textarea 
-                  value={formData.hrsContent!.paymentTerms} 
-                  onChange={(e)=>handleHRSChange('paymentTerms', e.target.value)} 
-                  placeholder="When and how payments should be made" 
-                  className="w-full min-h-[100px] px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500 resize-none" 
-                />
-                <div className="absolute top-3 left-3">
-                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                  </svg>
-                </div>
-              </div>
+              <RichTextEditor
+                value={formData.hrsContent!.paymentTerms}
+                onChange={(value) => handleHRSChange('paymentTerms', value)}
+                placeholder="When and how payments should be made"
+                className="w-full"
+              />
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -577,18 +653,7 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
               </div>
             </div>
             
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Total Amount In Words</label>
-              <div className="relative">
-                <input 
-                  type="text" 
-                  value={formData.hrsContent!.totalAmountInWords} 
-                  onChange={(e)=>handleHRSChange('totalAmountInWords', e.target.value)} 
-                  placeholder="e.g., TEN-THOUSAND AND SIX HUNDRED QATAR RIYALS ONLY." 
-                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-500" 
-                />
-              </div>
-            </div>
+            
           </div>
         </div>
 
@@ -679,6 +744,14 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
           </div>
         </div>
       </form>
+
+      {/* Date Picker Modal */}
+      <DatePickerModal
+        isOpen={isDatePickerOpen}
+        onClose={() => setIsDatePickerOpen(false)}
+        selectedDate={new Date(formData.hrsContent!.date)}
+        onDateSelect={(date) => handleHRSChange('date', date.toISOString())}
+      />
     </div>
   );
 }

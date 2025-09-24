@@ -176,7 +176,11 @@ const AppSidebar: React.FC = () => {
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // const isActive = (path: string) => path === pathname;
-   const isActive = useCallback((path: string) => path === pathname, [pathname]);
+   const isActive = useCallback((path: string) => {
+     // Keep Dashboard exact on "/", but allow section roots to match nested routes
+     if (path === "/") return pathname === "/";
+     return pathname === path || pathname.startsWith(`${path}/`);
+   }, [pathname]);
 
   useEffect(() => {
     // Check if the current path matches any submenu item

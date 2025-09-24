@@ -20,7 +20,7 @@ export default function QuotationsListPage() {
   const router = useRouter();
   // Firestore-backed view state
   const [isLoading, setIsLoading] = useState(true);
-  const [rows, setRows] = useState<Array<{ thread: { threadId: string; userRefID?: string }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }>>([]);
+  const [rows, setRows] = useState<Array<{ thread: { threadId: string; userRefID?: string; status?: string; clientName?: string; createdAt?: unknown; updatedAt?: unknown }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }>>([]);
 
   React.useEffect(() => {
     let mounted = true;
@@ -36,10 +36,17 @@ export default function QuotationsListPage() {
         const { collection, getDocs, query, orderBy, limit, doc } = await import("firebase/firestore");
         const threadsCol = collection(db, "quotationThreads");
         const snap = await getDocs(query(threadsCol, orderBy("createdAt", "desc")));
-        const out: Array<{ thread: { threadId: string; userRefID?: string }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
+        const out: Array<{ thread: { threadId: string; userRefID?: string; status?: string; clientName?: string; createdAt?: unknown; updatedAt?: unknown }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
         for (const d of snap.docs) {
           const data = d.data() as Record<string, unknown>;
-          const thread = { threadId: (data.threadId as string) || d.id, userRefID: (data.userRefID as string) || undefined };
+          const thread = {
+            threadId: (data.threadId as string) || d.id,
+            userRefID: (data.userRefID as string) || undefined,
+            status: (data.status as string) || undefined,
+            clientName: (data.clientName as string) || undefined,
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+          };
           const qCol = collection(doc(threadsCol, d.id), "quotations");
           const latestSnap = await getDocs(query(qCol, orderBy("createdAt", "desc"), limit(1)));
           let latest: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } | undefined;
@@ -86,10 +93,17 @@ export default function QuotationsListPage() {
           const { collection, getDocs, query, orderBy, limit, doc } = await import("firebase/firestore");
           const threadsCol = collection(db, "quotationThreads");
           const snap = await getDocs(query(threadsCol, orderBy("createdAt", "desc")));
-          const out: Array<{ thread: { threadId: string; userRefID?: string }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
+          const out: Array<{ thread: { threadId: string; userRefID?: string; status?: string; clientName?: string; createdAt?: unknown; updatedAt?: unknown }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
           for (const d of snap.docs) {
             const data = d.data() as Record<string, unknown>;
-            const thread = { threadId: (data.threadId as string) || d.id, userRefID: (data.userRefID as string) || undefined };
+            const thread = {
+              threadId: (data.threadId as string) || d.id,
+              userRefID: (data.userRefID as string) || undefined,
+              status: (data.status as string) || undefined,
+              clientName: (data.clientName as string) || undefined,
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt,
+            };
             const qCol = collection(doc(threadsCol, d.id), "quotations");
             const latestSnap = await getDocs(query(qCol, orderBy("createdAt", "desc"), limit(1)));
             let latest: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } | undefined;
@@ -180,9 +194,8 @@ export default function QuotationsListPage() {
               <th className="text-left font-semibold px-4 py-3">Ref ID</th>
               <th className="text-left font-semibold px-4 py-3">Client Name</th>
               <th className="text-left font-semibold px-4 py-3">Version</th>
-              <th className="text-left font-semibold px-4 py-3">Status</th>
+              <th className="text-left font-semibold px-4 py-3">Thread Status</th>
               <th className="text-right font-semibold px-4 py-3">Quoted Price</th>
-              <th className="text-left font-semibold px-4 py-3">Created Date</th>
               <th className="text-right font-semibold px-4 py-3">Action</th>
             </tr>
           </thead>
@@ -228,31 +241,40 @@ export default function QuotationsListPage() {
                   aria-label={`Open quotation ${thread.userRefID || thread.threadId}`}
                 >
                     <td className="px-4 py-3 text-gray-900 dark:text-white">{thread.userRefID || thread.threadId}</td>
-                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{client}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{thread.clientName || client}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{latest?.version}{latest?.isFinal ? ' (Final)' : ''}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        latest?.status === 'accepted' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' :
-                        latest?.status === 'declined' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' :
-                        'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
-                      }`}>
-                        {latest?.status}
-                      </span>
+                      {(() => {
+                        const raw = thread.status || '';
+                        // Map backend statuses to UI labels per request
+                        const mapLabel = (s: string): string => {
+                          const lower = s.toLowerCase();
+                          if (lower.includes('quotation') && lower.includes('created')) return 'quotationCreated';
+                          if (lower.includes('revised') || lower.includes('reverse')) return 'reverseQuotationCreated';
+                          if (lower.includes('accepted')) return 'quotationAccepted';
+                          if (lower.includes('declined')) return 'quotationDeclined';
+                          if (lower.includes('purchase') && (lower.includes('order') || lower.includes('po'))) return 'PurchaseOrderUploaded';
+                          return raw || 'quotationCreated';
+                        };
+                        const label = mapLabel(raw);
+                        const badgeClass = label === 'quotationAccepted'
+                          ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'
+                          : label === 'quotationDeclined'
+                          ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400'
+                          : label === 'PurchaseOrderUploaded'
+                          ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400'
+                          : label === 'reverseQuotationCreated'
+                          ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'
+                          : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+                        return (
+                          <span className={`px-2 py-1 text-xs rounded-full ${badgeClass}`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-brand-600 dark:text-brand-400">${typeof total === 'number' ? total.toFixed(2) : '0.00'} USD</td>
-                    <td className="px-4 py-3 text-gray-500">{
-                      latest
-                        ? (() => {
-                            const ca = latest.createdAt as unknown as { toDate?: () => Date } | string | number | undefined;
-                            const d = (ca && typeof ca === 'object' && 'toDate' in ca && typeof ca.toDate === 'function')
-                              ? (ca as { toDate: () => Date }).toDate()
-                              : (typeof ca === 'string' || typeof ca === 'number')
-                                ? new Date(ca)
-                                : undefined;
-                            return d ? d.toLocaleDateString() : '—';
-                          })()
-                        : '—'
-                    }</td>
+
                     <td className="px-4 py-3 text-right">
                       <Link href={`/quotations/${thread.threadId}`} onClick={(e)=>e.stopPropagation()} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
                         <span>Open</span>

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import ComponentCard from "@/components/common/ComponentCard";
 
 type Row = {
-  thread: { threadId: string; userRefID?: string };
+  thread: { threadId: string; userRefID?: string; createdAt?: unknown; updatedAt?: unknown };
   latest?: { status: string; content: Record<string, unknown> };
 };
 
@@ -31,7 +31,12 @@ export default function ThreadsPage() {
         const out: Row[] = [];
         for (const d of snap.docs) {
           const data = d.data() as Record<string, unknown>;
-          const thread = { threadId: (data.threadId as string) || d.id, userRefID: (data.userRefID as string) || undefined };
+          const thread = {
+            threadId: (data.threadId as string) || d.id,
+            userRefID: (data.userRefID as string) || undefined,
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+          };
           const qCol = collection(doc(threadsCol, d.id), "quotations");
           const latestSnap = await getDocs(query(qCol, orderBy("createdAt", "desc"), limit(1)));
           let latest: Row["latest"];
@@ -65,17 +70,19 @@ export default function ThreadsPage() {
           <table className="min-w-full text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400">
-                <th className="py-3 pr-4">Thread ID</th>
-                <th className="py-3 pr-4">Party Name</th>
-                <th className="py-3 pr-4">Ref ID</th>
-                <th className="py-3 pr-4">Status</th>
-                <th className="py-3 pr-4 text-right">Action</th>
+                <th className="py-3 pr-4">ThreadID</th>
+                <th className="py-3 pr-4">partyname</th>
+                <th className="py-3 pr-4">refid</th>
+                <th className="py-3 pr-4">status</th>
+                <th className="py-3 pr-4">createddate</th>
+                <th className="py-3 pr-4">updateddate</th>
+                <th className="py-3 pr-4 text-right">action</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-gray-500 dark:text-gray-400">Loading…</td>
+                  <td colSpan={7} className="py-6 text-center text-gray-500 dark:text-gray-400">Loading…</td>
                 </tr>
               )}
               {!isLoading && rows.map(({ thread, latest }) => {
@@ -95,6 +102,24 @@ export default function ThreadsPage() {
                 else if (typeof (content as Record<string, unknown>).reference === 'string') refId = (content as Record<string, unknown>).reference as string;
                 else if (typeof (content as Record<string, unknown>).refId === 'string') refId = (content as Record<string, unknown>).refId as string;
                 const status = latest?.status || 'pending';
+                const createdStr = (() => {
+                  const ca = thread?.createdAt as unknown as { toDate?: () => Date } | string | number | undefined;
+                  const d = (ca && typeof ca === 'object' && 'toDate' in ca && typeof (ca as any).toDate === 'function')
+                    ? (ca as { toDate: () => Date }).toDate()
+                    : (typeof ca === 'string' || typeof ca === 'number')
+                      ? new Date(ca)
+                      : undefined;
+                  return d ? d.toLocaleString() : '—';
+                })();
+                const updatedStr = (() => {
+                  const ua = thread?.updatedAt as unknown as { toDate?: () => Date } | string | number | undefined;
+                  const d = (ua && typeof ua === 'object' && 'toDate' in ua && typeof (ua as any).toDate === 'function')
+                    ? (ua as { toDate: () => Date }).toDate()
+                    : (typeof ua === 'string' || typeof ua === 'number')
+                      ? new Date(ua)
+                      : undefined;
+                  return d ? d.toLocaleString() : '—';
+                })();
                 return (
                   <tr
                     key={thread.threadId}
@@ -111,6 +136,8 @@ export default function ThreadsPage() {
                         'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400'
                       }`}>{status}</span>
                     </td>
+                    <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{createdStr}</td>
+                    <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{updatedStr}</td>
                     <td className="py-3 pr-4 text-right">
                       <Link href={`/threads/${thread.threadId}`} className="btn-tertiary">Open</Link>
                     </td>
@@ -119,7 +146,7 @@ export default function ThreadsPage() {
               })}
               {!isLoading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">No threads found</td>
+                  <td colSpan={7} className="py-8 text-center text-gray-500 dark:text-gray-400">No threads found</td>
                 </tr>
               )}
             </tbody>

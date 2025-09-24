@@ -1,5 +1,6 @@
 export type ThreadStatus =
   | 'QuotationCreated'
+  | 'QuotationFinalized'
   | 'QuotationDeclined'
   | 'QuotationAccepted'
   | 'PurchaseOrderRecieved'
@@ -16,9 +17,11 @@ export type Thread = {
   userRefID?: string; // User-provided reference ID for the quotation
   poId?: string;
   status: ThreadStatus;
+  clientName?: string;
   createdAt: string;
   updatedAt: string;
   finalQuotationId?: string;
+  activeStep?: number;
 };
 
 export type Quotation = {

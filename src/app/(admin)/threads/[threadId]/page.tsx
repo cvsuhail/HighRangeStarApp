@@ -16,7 +16,7 @@ export default function ThreadDetailPage() {
   const storeQuotations = React.useMemo(() => storeThread?.quotations ?? [], [storeThread]);
 
   const [isLoading, setIsLoading] = React.useState(true);
-  const [fsThread, setFsThread] = React.useState<{ threadId: string; userRefID?: string; status?: string } | null>(null);
+  const [fsThread, setFsThread] = React.useState<{ threadId: string; userRefID?: string; status?: string; activeStep?: number; clientName?: string; createdAt?: unknown; updatedAt?: unknown; poId?: string; documents?: Array<{ type: string }> } | null>(null);
   const [fsQuotations, setFsQuotations] = React.useState<Quotation[]>([]);
 
   React.useEffect(() => {
@@ -32,7 +32,15 @@ export default function ThreadDetailPage() {
         const tSnap = await getDoc(tRef);
         if (tSnap.exists()) {
           const tData = tSnap.data() as Record<string, unknown>;
-          if (mounted) setFsThread({ threadId: (tData.threadId as string) || tSnap.id, userRefID: (tData.userRefID as string) || undefined, status: (tData.status as string) || undefined });
+          if (mounted) setFsThread({
+            threadId: (tData.threadId as string) || tSnap.id,
+            userRefID: (tData.userRefID as string) || undefined,
+            status: (tData.status as string) || undefined,
+            activeStep: (tData.activeStep as number),
+            clientName: (tData.clientName as string) || undefined,
+            createdAt: tData.createdAt,
+            updatedAt: tData.updatedAt,
+          });
         }
         const qCol = collection(tRef, "quotations");
         const qSnap = await getDocs(query(qCol, orderBy("createdAt", "desc")));
@@ -84,10 +92,25 @@ export default function ThreadDetailPage() {
     setTimeout(() => { printWindow.document.close(); printWindow.focus(); printWindow.print(); }, 300);
   };
 
-  const onMarkFinal = () => {
+  const onMarkFinal = async () => {
     if (!thread || !latest) return;
-    setFinalQuotation(thread.threadId, latest.id);
-    setActiveStep((s) => Math.min(s + 1, steps.length - 1));
+    try {
+      const { QuotationService } = await import('@/lib/quotationService');
+      await Promise.all([
+        QuotationService.setQuotationIsFinal(thread.threadId, latest.id, true),
+        QuotationService.setQuotationStatus(thread.threadId, latest.id, 'accepted'),
+        QuotationService.setFinalQuotationId(thread.threadId, latest.id),
+        QuotationService.setThreadActiveStep(thread.threadId, 1),
+        QuotationService.setThreadStatus(thread.threadId, 'QuotationAccepted'),
+      ]);
+      setFinalQuotation(thread.threadId, latest.id);
+      setFsThread((prev) => prev ? { ...prev, activeStep: 1, status: 'QuotationAccepted' } : prev);
+      setFsQuotations((prev) => prev.map(q => q.id === latest.id ? { ...q, isFinal: true, status: 'accepted' } : q));
+      setActiveStep(1);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to mark final:', e);
+    }
   };
 
   const steps = [
@@ -99,6 +122,11 @@ export default function ThreadDetailPage() {
     { key: "DownloadFinalDoc", label: "Download Final Doc" },
   ];
   const [activeStep, setActiveStep] = React.useState(0);
+  React.useEffect(() => {
+    if (fsThread && typeof fsThread.activeStep === 'number') {
+      setActiveStep(fsThread.activeStep);
+    }
+  }, [fsThread]);
 
   if (!thread) {
     return (
@@ -139,17 +167,71 @@ export default function ThreadDetailPage() {
                 {steps.map((s, idx) => {
                   const isActive = idx === activeStep;
                   const isDone = idx < activeStep;
+                  
+                  // Define completion criteria for each step
+                  const getStepCompletionStatus = (stepIndex: number) => {
+                    // Use storeThread for properties that might not be in fsThread
+                    const threadData = storeThread || thread;
+                    switch (stepIndex) {
+                      case 0: // Create Quotation
+                        return latest?.isFinal === true;
+                      case 1: // Upload Purchase Order
+                        return threadData?.poId !== undefined;
+                      case 2: // Create Delivery Note
+                        return threadData?.documents?.some((d: { type: string }) => d.type === 'delivery_note_unsigned') === true;
+                      case 3: // Upload Signed Delivery Note
+                        return threadData?.documents?.some((d: { type: string }) => d.type === 'delivery_note_signed') === true;
+                      case 4: // Create Invoice
+                        return threadData?.documents?.some((d: { type: string }) => d.type === 'invoice') === true;
+                      case 5: // Download Final Doc
+                        return threadData?.status === 'Completed';
+                      default:
+                        return false;
+                    }
+                  };
+                  
+                  // Check if current step is completed
+                  const isCurrentStepCompleted = getStepCompletionStatus(activeStep);
+                  // Allow navigation to current/previous steps or next step if current is completed
+                  const canNavigate = idx <= activeStep || (idx === activeStep + 1 && isCurrentStepCompleted);
                   return (
-                    <li key={s.key} className="flex items-start gap-3">
+                    <li
+                      key={s.key}
+                      onClick={() => { if (canNavigate) setActiveStep(idx); }}
+                      className={`flex items-start gap-3 select-none ${canNavigate ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-lg -mx-2 px-2 py-1 transition-colors' : 'cursor-not-allowed opacity-60'}`}
+                      aria-disabled={!canNavigate}
+                    >
                       <div className="flex flex-col items-center">
-                        <div className={`h-8 w-8 rounded-full grid place-items-center text-sm font-semibold transition-all ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/30' : isDone ? 'bg-emerald-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>{idx+1}</div>
+                        <div className={`h-8 w-8 rounded-full grid place-items-center text-sm font-semibold transition-all ${
+                          isActive 
+                            ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/30' 
+                            : isDone || getStepCompletionStatus(idx)
+                            ? 'bg-emerald-600 text-white' 
+                            : canNavigate
+                            ? 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-400'
+                        }`}>
+                          {isDone || getStepCompletionStatus(idx) ? '✓' : idx+1}
+                        </div>
                         {idx < steps.length - 1 && (
-                          <div className={`w-px h-8 mt-1 ${isDone ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-800'}`}></div>
+                          <div className={`w-px h-8 mt-1 ${isDone || getStepCompletionStatus(idx) ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-800'}`}></div>
                         )}
                       </div>
                       <div className="pt-0.5">
-                        <div className={`text-sm font-semibold ${isActive ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>{s.label}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{idx === 0 ? 'Prepare and review quotation' : idx === 1 ? 'Attach buyer PO' : idx === 2 ? 'Create delivery note' : idx === 3 ? 'Upload signed delivery note' : idx === 4 ? 'Generate invoice' : 'Download final consolidated document'}</div>
+                        <div className={`text-sm font-semibold ${isActive ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
+                          {s.label}
+                          {getStepCompletionStatus(idx) && !isDone && (
+                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                              Completed
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {idx === 0 ? 'Prepare and review quotation' : idx === 1 ? 'Attach buyer PO' : idx === 2 ? 'Create delivery note' : idx === 3 ? 'Upload signed delivery note' : idx === 4 ? 'Generate invoice' : 'Download final consolidated document'}
+                          {idx === activeStep + 1 && isCurrentStepCompleted && (
+                            <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-medium">← Ready to proceed</span>
+                          )}
+                        </div>
                       </div>
                     </li>
                   );
@@ -163,6 +245,8 @@ export default function ThreadDetailPage() {
         </div>
 
         <div className="lg:col-span-8 space-y-4">
+          {/* Thread details header table - horizontal with specific columns */}
+         
           {activeStep === 0 && (
             <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
