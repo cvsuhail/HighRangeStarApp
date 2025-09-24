@@ -211,4 +211,85 @@ export class VesselService {
       throw new Error('Failed to check vessel code');
     }
   }
+
+  /**
+   * Auto-save a new vessel from parsed vessel name data
+   * This creates a new vessel if it doesn't already exist
+   */
+  static async autoSaveVessel(parsedData: {
+    name: string;
+    number: string;
+    slnoFormat: string;
+    code: string;
+  }): Promise<Vessel | null> {
+    try {
+      // Check if vessel already exists by name and number
+      const existingVessels = await this.getVessels();
+      const existingVessel = existingVessels.find(v => 
+        v.name.toLowerCase() === parsedData.name.toLowerCase() && 
+        v.number === parsedData.number
+      );
+
+      if (existingVessel) {
+        return existingVessel;
+      }
+
+      // Check if number or code already exists
+      const numberExists = await this.checkVesselNumberExists(parsedData.number);
+      const codeExists = await this.checkVesselCodeExists(parsedData.code);
+
+      if (numberExists || codeExists) {
+        // Generate unique code if it exists
+        let uniqueCode = parsedData.code;
+        let counter = 1;
+        while (await this.checkVesselCodeExists(uniqueCode)) {
+          uniqueCode = `${parsedData.name.charAt(0)}${parsedData.number}${counter}`;
+          counter++;
+        }
+        parsedData.code = uniqueCode;
+      }
+
+      // Create new vessel
+      const newVessel = await this.createVessel(parsedData);
+      return newVessel;
+    } catch (error) {
+      console.error('Error auto-saving vessel:', error);
+      throw new Error('Failed to auto-save vessel');
+    }
+  }
+
+  /**
+   * Search vessels by name with fuzzy matching
+   */
+  static async searchVesselsByName(searchTerm: string, limit: number = 10): Promise<Vessel[]> {
+    try {
+      const allVessels = await this.getVessels();
+      const term = searchTerm.toLowerCase().trim();
+      
+      if (!term) return [];
+
+      // Simple fuzzy matching - prioritize exact matches, then contains matches
+      const exactMatches = allVessels.filter(vessel => 
+        vessel.name.toLowerCase() === term
+      );
+
+      const containsMatches = allVessels.filter(vessel => 
+        vessel.name.toLowerCase().includes(term) && 
+        !exactMatches.includes(vessel)
+      );
+
+      const startsWithMatches = allVessels.filter(vessel => 
+        vessel.name.toLowerCase().startsWith(term) && 
+        !exactMatches.includes(vessel) &&
+        !containsMatches.includes(vessel)
+      );
+
+      // Combine results in order of relevance
+      const results = [...exactMatches, ...startsWithMatches, ...containsMatches];
+      return results.slice(0, limit);
+    } catch (error) {
+      console.error('Error searching vessels:', error);
+      return [];
+    }
+  }
 }

@@ -45,6 +45,21 @@ service cloud.firestore {
         && data.updatedAt is string;
     }
     
+    // Quotation threads and quotations
+    match /quotationThreads/{threadId} {
+      // Allow reads for now; tighten later if needed
+      allow read: if true;
+
+      // Allow creates/updates; in production prefer `request.auth != null`
+      allow create, update: if true;
+
+      // Subcollection for quotations within a thread
+      match /quotations/{quotationId} {
+        allow read: if true;
+        allow create, update: if true;
+      }
+    }
+
     // Deny all other access
     match /{document=**} {
       allow read, write: if false;

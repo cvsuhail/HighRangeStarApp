@@ -1,4 +1,13 @@
-export type ThreadStatus = 'active' | 'declined' | 'completed';
+export type ThreadStatus =
+  | 'QuotationCreated'
+  | 'QuotationDeclined'
+  | 'QuotationAccepted'
+  | 'PurchaseOrderRecieved'
+  | 'WorkStarted'
+  | 'DeliveryNoteCreated'
+  | 'UploadedSignedDeliveryNote'
+  | 'InvoiceCreated'
+  | 'Completed';
 export type QuotationStatus = 'pending' | 'accepted' | 'declined';
 export type DocumentType = 'purchase_order' | 'delivery_note_unsigned' | 'delivery_note_signed' | 'invoice';
 

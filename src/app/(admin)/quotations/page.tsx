@@ -18,24 +18,98 @@ export default function QuotationsListPage() {
   const [filter, setFilter] = useState<(typeof statusFilters)[number]["key"]>("all");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const router = useRouter();
+  // Firestore-backed view state
+  const [isLoading, setIsLoading] = useState(true);
+  const [rows, setRows] = useState<Array<{ thread: { threadId: string; userRefID?: string }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }>>([]);
 
-  const groupedByThread = useMemo(() => {
-    return threads.map((t) => {
-      const qs = t.quotations;
-      const latest = qs[0];
-      return { thread: t, latest, rest: qs.slice(1) };
-    });
-  }, [threads]);
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setIsLoading(true);
+        const { getFirestore } = await import("@/lib/firebase");
+        const db = getFirestore();
+        if (!db) {
+          if (mounted) setRows([]);
+          return;
+        }
+        const { collection, getDocs, query, orderBy, limit, doc } = await import("firebase/firestore");
+        const threadsCol = collection(db, "quotationThreads");
+        const snap = await getDocs(query(threadsCol, orderBy("createdAt", "desc")));
+        const out: Array<{ thread: { threadId: string; userRefID?: string }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
+        for (const d of snap.docs) {
+          const data = d.data() as Record<string, unknown>;
+          const thread = { threadId: (data.threadId as string) || d.id, userRefID: (data.userRefID as string) || undefined };
+          const qCol = collection(doc(threadsCol, d.id), "quotations");
+          const latestSnap = await getDocs(query(qCol, orderBy("createdAt", "desc"), limit(1)));
+          let latest: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } | undefined;
+          if (!latestSnap.empty) {
+            const qd = latestSnap.docs[0];
+            const qv = qd.data() as Record<string, unknown>;
+            latest = {
+              version: String(qv.version || "Quotation"),
+              status: String(qv.status || "pending"),
+              content: (qv.content as Record<string, unknown>) || {},
+              createdAt: (qv.createdAt as unknown) as string | number,
+              isFinal: Boolean(qv.isFinal),
+            };
+          }
+          out.push({ thread, latest });
+        }
+        if (mounted) setRows(out);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to fetch quotations", err);
+        if (mounted) setRows([]);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const filteredThreads = useMemo(() => {
-    if (filter === "all") return groupedByThread;
-    return groupedByThread.filter(({ thread }) => thread.quotations.some((q) => q.status === filter));
-  }, [groupedByThread, filter]);
+    if (filter === "all") return rows;
+    return rows.filter(r => (r.latest?.status || "") === filter);
+  }, [rows, filter]);
 
   const handleCreateSuccess = () => {
     setShowCreateForm(false);
-    // Optionally redirect to the thread detail page
-    // router.push(`/quotations/${threadId}`);
+    // Refresh after creating
+    setTimeout(() => {
+      // best-effort refresh
+      (async () => {
+        try {
+          const { getFirestore } = await import("@/lib/firebase");
+          const db = getFirestore();
+          if (!db) return;
+          const { collection, getDocs, query, orderBy, limit, doc } = await import("firebase/firestore");
+          const threadsCol = collection(db, "quotationThreads");
+          const snap = await getDocs(query(threadsCol, orderBy("createdAt", "desc")));
+          const out: Array<{ thread: { threadId: string; userRefID?: string }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
+          for (const d of snap.docs) {
+            const data = d.data() as Record<string, unknown>;
+            const thread = { threadId: (data.threadId as string) || d.id, userRefID: (data.userRefID as string) || undefined };
+            const qCol = collection(doc(threadsCol, d.id), "quotations");
+            const latestSnap = await getDocs(query(qCol, orderBy("createdAt", "desc"), limit(1)));
+            let latest: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } | undefined;
+            if (!latestSnap.empty) {
+              const qd = latestSnap.docs[0];
+              const qv = qd.data() as Record<string, unknown>;
+              latest = {
+                version: String(qv.version || "Quotation"),
+                status: String(qv.status || "pending"),
+                content: (qv.content as Record<string, unknown>) || {},
+                createdAt: (qv.createdAt as unknown) as string | number,
+                isFinal: Boolean(qv.isFinal),
+              };
+            }
+            out.push({ thread, latest });
+          }
+          setRows(out);
+        } catch {}
+      })();
+    }, 300);
   };
 
   if (showCreateForm) {
@@ -113,7 +187,18 @@ export default function QuotationsListPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {filteredThreads.map(({ thread, latest }) => {
+            {isLoading && Array.from({ length: 6 }).map((_, i) => (
+              <tr key={`skeleton_${i}`}>
+                <td className="px-4 py-4"><div className="h-3 w-28 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-800 dark:to-gray-700 animate-pulse"></div></td>
+                <td className="px-4 py-4"><div className="h-3 w-40 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-800 dark:to-gray-700 animate-pulse"></div></td>
+                <td className="px-4 py-4"><div className="h-3 w-20 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-800 dark:to-gray-700 animate-pulse"></div></td>
+                <td className="px-4 py-4"><div className="h-6 w-20 rounded-full bg-gradient-to-r from-amber-200 via-amber-100 to-amber-200 dark:from-amber-900/40 dark:via-amber-900/20 dark:to-amber-900/40 animate-pulse"></div></td>
+                <td className="px-4 py-4 text-right"><div className="h-3 w-24 ml-auto rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-800 dark:to-gray-700 animate-pulse"></div></td>
+                <td className="px-4 py-4"><div className="h-3 w-24 rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-800 dark:to-gray-700 animate-pulse"></div></td>
+                <td className="px-4 py-4 text-right"><div className="h-8 w-20 ml-auto rounded bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-800 dark:to-gray-700 animate-pulse"></div></td>
+              </tr>
+            ))}
+            {!isLoading && filteredThreads.map(({ thread, latest }) => {
               const content = latest?.content as Record<string, unknown> | undefined;
               type TotalItem = { quantity: number; price: number };
               const items = (content && (content as { items?: unknown }).items) as TotalItem[] | undefined;
@@ -155,7 +240,19 @@ export default function QuotationsListPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-brand-600 dark:text-brand-400">${typeof total === 'number' ? total.toFixed(2) : '0.00'} USD</td>
-                    <td className="px-4 py-3 text-gray-500">{latest ? new Date(latest.createdAt).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-3 text-gray-500">{
+                      latest
+                        ? (() => {
+                            const ca = latest.createdAt as unknown as { toDate?: () => Date } | string | number | undefined;
+                            const d = (ca && typeof ca === 'object' && 'toDate' in ca && typeof ca.toDate === 'function')
+                              ? (ca as { toDate: () => Date }).toDate()
+                              : (typeof ca === 'string' || typeof ca === 'number')
+                                ? new Date(ca)
+                                : undefined;
+                            return d ? d.toLocaleDateString() : '—';
+                          })()
+                        : '—'
+                    }</td>
                     <td className="px-4 py-3 text-right">
                       <Link href={`/quotations/${thread.threadId}`} onClick={(e)=>e.stopPropagation()} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
                         <span>Open</span>
@@ -165,7 +262,7 @@ export default function QuotationsListPage() {
                   </tr>
               );
             })}
-            {filteredThreads.length === 0 && (
+            {!isLoading && filteredThreads.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">No quotations found</td>
               </tr>

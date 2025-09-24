@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { VesselService } from "@/lib/vesselService";
 import type { Vessel, CreateVesselData } from "@/types/vessel";
 import { useAuth } from "@/context/AuthContext";
+import { VesselNameInput } from "@/components/form/vessel-name-input";
 
 export default function VesselsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -172,30 +173,58 @@ export default function VesselsPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">Vessel Name</label>
-              <input value={form.name} onChange={(e)=>{
-                const name = e.target.value;
-                setForm((prev)=>{
-                  const next = { ...prev, name };
-                  if (!codeEdited) next.code = generateVesselCode(name, next.number);
-                  return next;
-                });
-              }} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+              <VesselNameInput
+                value={form.name}
+                onChange={(name) => {
+                  setForm((prev) => {
+                    const next = { ...prev, name };
+                    if (!codeEdited) next.code = generateVesselCode(name, next.number);
+                    return next;
+                  });
+                }}
+                onVesselParsed={(parsed) => {
+                  setForm((prev) => {
+                    const next = { ...prev, ...parsed };
+                    if (!codeEdited) {
+                      next.code = parsed.code;
+                    }
+                    return next;
+                  });
+                }}
+                onVesselSaved={(savedVessel) => {
+                  // Refresh the vessel list to include the newly saved vessel
+                  loadVessels();
+                }}
+                autoSave={true}
+                placeholder="Enter vessel name (e.g., sayuk-60)"
+                className="mt-1"
+              />
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">Vessel Number</label>
-              <input value={form.number} onChange={(e)=>{
-                const number = e.target.value;
-                setForm((prev)=>{
-                  const next = { ...prev, number };
-                  if (!codeEdited) next.code = generateVesselCode(next.name, number);
-                  return next;
-                });
-              }} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+              <input 
+                value={form.number} 
+                onChange={(e)=>{
+                  const number = e.target.value;
+                  setForm((prev)=>{
+                    const next = { ...prev, number };
+                    if (!codeEdited) next.code = generateVesselCode(next.name, number);
+                    return next;
+                  });
+                }} 
+                placeholder="Auto-filled from vessel name"
+                className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+              />
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">SLNO Format</label>
-              <input value={form.slnoFormat} onChange={(e)=>setForm({...form, slnoFormat:e.target.value})} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
-              <p className="mt-1 text-[11px] text-gray-500">Use # for digits, e.g., H## → H01, H02</p>
+              <input 
+                value={form.slnoFormat} 
+                onChange={(e)=>setForm({...form, slnoFormat:e.target.value})} 
+                placeholder="Auto-generated from vessel name"
+                className="mt-1 w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+              />
+              <p className="mt-1 text-[11px] text-gray-500">Use # for digits, e.g., S## → S01, S02</p>
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-300">Vessel Code</label>

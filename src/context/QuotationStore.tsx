@@ -16,15 +16,16 @@ import type { HRSQuotationContent } from "@/types/quotation";
 type Store = {
   threads: ThreadWithRelations[];
   templates: QuotationTemplate[];
-  getNextRefID: () => string;
-  createQuotationWithTemplate: (data: CreateQuotationData) => { thread: Thread; quotation: Quotation };
+  getNextRefID: () => Promise<string>;
+  createQuotationWithTemplate: (data: CreateQuotationData) => Promise<{ thread: Thread; quotation: Quotation }>;
   createInitialQuotation: (quotationData: Record<string, unknown>) => { thread: Thread; quotation: Quotation };
   handleDecline: (threadId: string) => void;
   undoDecline: (threadId: string) => void;
-  createRevision: (threadId: string, previousQuotationId: string) => Quotation | undefined;
+  createRevision: (threadId: string, previousQuotationId: string, contentOverride?: Record<string, unknown>) => Promise<Quotation | undefined>;
   handleAcceptance: (quotationId: string, threadId: string, userMarksAsFinal?: boolean) => void;
   setFinalQuotation: (threadId: string, quotationId: string) => void;
-  updateQuotationContent: (threadId: string, quotationId: string, content: Record<string, unknown>) => void;
+  updateQuotationContent: (threadId: string, quotationId: string, content: Record<string, unknown>) => Promise<void>;
+  deleteQuotation: (threadId: string, quotationId: string) => Promise<void>;
   uploadPurchaseOrder: (threadId: string, file: File, poId: string) => Document | undefined;
   createDeliveryNote: (threadId: string, data: Record<string, unknown>) => Record<string, unknown> | undefined;
   uploadSignedDeliveryNote: (threadId: string, file: File) => { unsignedDoc: Document; signedDoc: Document } | undefined;
@@ -45,25 +46,26 @@ const generateUniqueThreadId = (userRefID?: string) => {
 };
 
 const generateNextRefID = (existingThreads: ThreadWithRelations[]): string => {
-  const currentYear = new Date().getFullYear();
-  const yearPrefix = `QT-${currentYear}`;
-  
-  // Find all refIDs that match the current year pattern
-  const existingRefs = existingThreads
-    .map(thread => thread.userRefID)
-    .filter(refID => refID && refID.startsWith(yearPrefix))
-    .map(refID => {
-      const match = refID?.match(/QT-(\d{4})-(\d+)/);
-      return match ? parseInt(match[2], 10) : 0;
+  // New scheme: HRS-QN-<number>[-<vesselCode>]
+  // Find all numeric parts from existing HRS-QN refs (ignore vessel code suffix)
+  const hrsNumbers = existingThreads
+    .map(t => t.userRefID)
+    .filter(Boolean)
+    .map(ref => {
+      // Accept both with and without vessel suffix
+      const m = (ref as string).match(/HRS-QN-(\d{2,})(?:-[A-Z]\d+)?$/);
+      return m ? parseInt(m[1], 10) : undefined;
     })
-    .filter(num => !isNaN(num));
-  
-  // Get the highest number and increment
-  const maxNumber = existingRefs.length > 0 ? Math.max(...existingRefs) : 0;
+    .filter((n): n is number => typeof n === 'number' && !isNaN(n));
+
+  // If none exist yet, seed using thread count to avoid collisions in mock/local data
+  const seedBase = 25000; // starting base to keep IDs looking like 25xxx
+  const fallbackNumber = seedBase + (existingThreads.length + 1);
+  const maxNumber = hrsNumbers.length > 0 ? Math.max(...hrsNumbers) : (fallbackNumber - 1);
   const nextNumber = maxNumber + 1;
-  
-  // Format with leading zeros (e.g., 001, 002, etc.)
-  return `${yearPrefix}-${nextNumber.toString().padStart(3, '0')}`;
+
+  // Return base without vessel code; UI may append -<code> dynamically when vessel is selected
+  return `HRS-QN-${nextNumber}`;
 };
 const saveFile = (file: File) => `/mock/${randomId("file")}_${file.name}`;
 const generateUnsignedDeliveryNotePath = (threadId: string) => `/mock/${threadId}/delivery_note_unsigned.pdf`;
@@ -81,85 +83,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     },
   ]);
 
-  const [threads, setThreads] = useState<ThreadWithRelations[]>(() => {
-    // Create some realistic dummy data
-    const thread1: ThreadWithRelations = {
-      threadId: "TRD-QT-2024-001",
-      userRefID: "QT-2024-001",
-      status: "active",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      quotations: [
-        {
-          id: randomId("q"),
-          threadId: "TRD-QT-2024-001",
-          version: "Quotation",
-          status: "pending",
-          content: {
-            clientInfo: {
-              name: "Ocean Freight Solutions Ltd",
-              email: "procurement@oceanfreight.com",
-              company: "Ocean Freight Solutions Ltd",
-              address: "123 Maritime Drive, Port City, PC 12345",
-            },
-            items: [
-              { name: "Container Shipping - 20ft", description: "Standard container shipping", quantity: 2, price: 2500, unit: "container" },
-              { name: "Customs Clearance", description: "Full customs documentation and clearance", quantity: 1, price: 350, unit: "service" },
-            ],
-            total: 5350,
-            currency: "USD",
-          },
-          createdAt: nowIso(),
-          isFinal: false,
-        },
-      ],
-      documents: [],
-    };
-
-    const thread2: ThreadWithRelations = {
-      threadId: "TRD-QT-2024-002",
-      userRefID: "QT-2024-002",
-      status: "active",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      quotations: [
-        {
-          id: randomId("q"),
-          threadId: "TRD-QT-2024-002",
-          version: "Quotation",
-          status: "accepted",
-          content: {
-            clientInfo: {
-              name: "Global Logistics Corp",
-              email: "quotes@globallogistics.com",
-              company: "Global Logistics Corp",
-              address: "456 Trade Avenue, Commerce City, CC 67890",
-            },
-            items: [
-              { name: "Express Air Freight", description: "Priority air cargo service", quantity: 1, price: 4500, unit: "shipment" },
-              { name: "Insurance Coverage", description: "Full cargo insurance", quantity: 1, price: 225, unit: "service" },
-            ],
-            total: 4725,
-            currency: "USD",
-          },
-          createdAt: nowIso(),
-          isFinal: true,
-        },
-      ],
-      documents: [
-        {
-          id: randomId("doc"),
-          threadId: "TRD-QT-2024-002",
-          type: "purchase_order",
-          filename: "PO-GLC-2024-002.pdf",
-          filepath: "/mock/PO-GLC-2024-002.pdf",
-          uploadedAt: nowIso(),
-        },
-      ],
-    };
-
-    return [thread1, thread2];
-  });
+  const [threads, setThreads] = useState<ThreadWithRelations[]>([]);
 
   const updateThread = (threadId: string, update: Partial<Thread>) => {
     setThreads((prev) =>
@@ -172,7 +96,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const thread: ThreadWithRelations = {
       threadId,
       userRefID: data.userRefID,
-      status: (data.status as ThreadStatus) || "active",
+      status: (data.status as ThreadStatus) || "QuotationCreated",
       createdAt: nowIso(),
       updatedAt: nowIso(),
       quotations: [],
@@ -216,43 +140,30 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return count + 1;
   };
 
-  const createQuotationWithTemplate: Store["createQuotationWithTemplate"] = (data) => {
-    const threadId = generateUniqueThreadId(data.userRefID);
-    const thread = createThread({ threadId, userRefID: data.userRefID, status: "active" });
-    
-    // Get template content
-    const template = templates.find(t => t.id === data.templateId) || templates.find(t => t.isDefault);
-    
-    // If HRS content is provided, prioritize it
-    let quotationContent: Record<string, unknown>;
-    if (data.hrsContent) {
-      const hrs = data.hrsContent as HRSQuotationContent;
-      const total = hrs.items.reduce((sum, it) => sum + (it.qty * it.unitPrice), 0);
-      quotationContent = { ...hrs, total } as HRSQuotationContent;
-    } else {
-      const items = data.items || [];
-      quotationContent = {
-        ...template?.content,
-        clientInfo: data.clientInfo,
-        items,
-        total: items.reduce((sum, item) => sum + (item.quantity * item.price), 0),
-        currency: "USD",
-        ...data.additionalInfo,
-      } as Record<string, unknown>;
-    }
-
-    const quotation = createQuotation({
-      threadId,
-      version: "Quotation",
-      status: "pending",
-      content: quotationContent,
+  const createQuotationWithTemplate: Store["createQuotationWithTemplate"] = async (data) => {
+    const { QuotationService } = await import("@/lib/quotationService");
+    const result = await QuotationService.createQuotationWithHRS({
+      userRefID: data.userRefID,
+      hrsContent: data.hrsContent as HRSQuotationContent,
     });
-    return { thread, quotation };
+
+    // reflect in local state for immediate UI
+    const threadWithRelations: ThreadWithRelations = {
+      threadId: result.thread.threadId,
+      userRefID: result.thread.userRefID,
+      status: result.thread.status,
+      createdAt: result.thread.createdAt,
+      updatedAt: result.thread.updatedAt,
+      quotations: [result.quotation],
+      documents: [],
+    } as ThreadWithRelations;
+    setThreads((prev) => [threadWithRelations, ...prev]);
+    return result;
   };
 
   const createInitialQuotation: Store["createInitialQuotation"] = (quotationData) => {
     const threadId = generateUniqueThreadId();
-    const thread = createThread({ threadId, status: "active" });
+    const thread = createThread({ threadId, status: "QuotationCreated" });
     const quotation = createQuotation({
       threadId,
       version: "Quotation",
@@ -268,7 +179,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         t.threadId === threadId
           ? {
               ...t,
-              status: "declined",
+              status: "QuotationDeclined",
               updatedAt: nowIso(),
               quotations: t.quotations.map((q) => ({ ...q, status: "declined" as QuotationStatus, isFinal: false })),
             }
@@ -283,7 +194,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         t.threadId === threadId
           ? {
               ...t,
-              status: "active",
+              status: "QuotationCreated",
               updatedAt: nowIso(),
               quotations: t.quotations.map((q) =>
                 q.status === "declined" ? { ...q, status: "pending" as QuotationStatus } : q
@@ -294,17 +205,22 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     );
   };
 
-  const createRevision: Store["createRevision"] = (threadId, previousQuotationId) => {
-    const t = threads.find((x) => x.threadId === threadId);
-    const prev = t?.quotations.find((q) => q.id === previousQuotationId);
-    if (!prev) return undefined;
-    const versionNumber = getNextVersionNumber(threadId);
-    return createQuotation({
-      threadId,
-      version: `QuotationRevised${versionNumber}`,
-      status: "pending",
-      content: { ...prev.content },
-    });
+  const createRevision: Store["createRevision"] = async (threadId, previousQuotationId, contentOverride) => {
+    try {
+      const { QuotationService } = await import("@/lib/quotationService");
+      const { quotation } = await QuotationService.createRevision(threadId, previousQuotationId, contentOverride);
+      // Reflect in local state for immediate UI
+      setThreads((prev) => prev.map((t) => (
+        t.threadId === threadId
+          ? { ...t, quotations: [quotation, ...t.quotations] }
+          : t
+      )));
+      return quotation;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to create revision', e);
+      return undefined;
+    }
   };
 
   const handleAcceptance: Store["handleAcceptance"] = (quotationId, threadId, userMarksAsFinal) => {
@@ -314,6 +230,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ? {
               ...t,
               updatedAt: nowIso(),
+              status: "QuotationAccepted",
               quotations: t.quotations.map((q) =>
                 q.id === quotationId ? { ...q, status: "accepted", isFinal: userMarksAsFinal || q.isFinal } : q
               ),
@@ -331,7 +248,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ? {
               ...t,
               // When marking final: clear decline on thread, and ensure mutual exclusivity
-              status: "active",
+              status: "QuotationAccepted",
               updatedAt: nowIso(),
               quotations: t.quotations.map((q) => ({
                 ...q,
@@ -345,18 +262,39 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     );
   };
 
-  const updateQuotationContent: Store["updateQuotationContent"] = (threadId, quotationId, content) => {
-    setThreads((prev) =>
-      prev.map((t) =>
-        t.threadId === threadId
-          ? {
-              ...t,
-              updatedAt: nowIso(),
-              quotations: t.quotations.map((q) => (q.id === quotationId ? { ...q, content } : q)),
-            }
-          : t
-      )
-    );
+  const updateQuotationContent: Store["updateQuotationContent"] = async (threadId, quotationId, content) => {
+    try {
+      const { QuotationService } = await import("@/lib/quotationService");
+      await QuotationService.updateQuotationContent(threadId, quotationId, content);
+    } finally {
+      // Update local state regardless to keep UI responsive
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.threadId === threadId
+            ? {
+                ...t,
+                updatedAt: nowIso(),
+                quotations: t.quotations.map((q) => (q.id === quotationId ? { ...q, content } : q)),
+              }
+            : t
+        )
+      );
+    }
+  };
+
+  const deleteQuotation: Store["deleteQuotation"] = async (threadId, quotationId) => {
+    try {
+      const { QuotationService } = await import("@/lib/quotationService");
+      await QuotationService.deleteQuotation(threadId, quotationId);
+    } finally {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.threadId === threadId
+            ? { ...t, quotations: t.quotations.filter((q) => q.id !== quotationId), updatedAt: nowIso() }
+            : t
+        )
+      );
+    }
   };
 
   const hasPurchaseOrder = (threadId: string) => {
@@ -423,13 +361,20 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const completeThread: Store["completeThread"] = (threadId) => {
-    updateThread(threadId, { status: "completed" });
+    updateThread(threadId, { status: "Completed" });
   };
 
   const value = useMemo<Store>(() => ({
     threads,
     templates,
-    getNextRefID: () => generateNextRefID(threads),
+    getNextRefID: async () => {
+      const { QuotationService } = await import("@/lib/quotationService");
+      try {
+        return await QuotationService.getNextRefID();
+      } catch {
+        return generateNextRefID(threads);
+      }
+    },
     createQuotationWithTemplate,
     createInitialQuotation,
     handleDecline,
@@ -438,6 +383,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     handleAcceptance,
     setFinalQuotation,
     updateQuotationContent,
+    deleteQuotation,
     uploadPurchaseOrder,
     createDeliveryNote,
     uploadSignedDeliveryNote,
