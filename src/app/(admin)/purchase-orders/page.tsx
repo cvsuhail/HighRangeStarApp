@@ -99,7 +99,7 @@ export default function PurchaseOrdersPage() {
         {threads
           .filter((t) => {
             const status = String(t.status || '').toLowerCase();
-            const hasFinal = Boolean((t as any).finalQuotationId);
+            const hasFinal = Boolean((t as { finalQuotationId?: string }).finalQuotationId);
             return status === 'quotationaccepted' || hasFinal;
           })
           .map((t) => {

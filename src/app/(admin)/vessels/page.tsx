@@ -191,7 +191,7 @@ export default function VesselsPage() {
                     return next;
                   });
                 }}
-                onVesselSaved={(savedVessel) => {
+                onVesselSaved={() => {
                   // Refresh the vessel list to include the newly saved vessel
                   loadVessels();
                 }}

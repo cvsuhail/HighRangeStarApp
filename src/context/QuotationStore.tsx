@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState, useCallback } from "react";
 import type {
   CreateQuotationData,
   Document,
@@ -124,23 +124,18 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return newD;
   };
 
-  const hasAcceptedQuotation = (threadId: string) => {
+  const hasAcceptedQuotation = useCallback((threadId: string) => {
     const t = threads.find((x) => x.threadId === threadId);
     return t?.quotations.some((q) => q.status === "accepted");
-  };
+  }, [threads]);
 
-  const getFinalQuotation = (threadId: string): Quotation | undefined => {
+  const getFinalQuotation = useCallback((threadId: string): Quotation | undefined => {
     const t = threads.find((x) => x.threadId === threadId);
     return t?.quotations.find((q) => q.isFinal) || t?.quotations.find((q) => q.status === "accepted");
-  };
+  }, [threads]);
 
-  const getNextVersionNumber = (threadId: string) => {
-    const t = threads.find((x) => x.threadId === threadId);
-    const count = t?.quotations.filter((q) => q.version.startsWith("QuotationRevised")).length || 0;
-    return count + 1;
-  };
 
-  const createQuotationWithTemplate: Store["createQuotationWithTemplate"] = async (data) => {
+  const createQuotationWithTemplate: Store["createQuotationWithTemplate"] = useCallback(async (data) => {
     const { QuotationService } = await import("@/lib/quotationService");
     const result = await QuotationService.createQuotationWithHRS({
       userRefID: data.userRefID,
@@ -159,9 +154,9 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } as ThreadWithRelations;
     setThreads((prev) => [threadWithRelations, ...prev]);
     return result;
-  };
+  }, []);
 
-  const createInitialQuotation: Store["createInitialQuotation"] = (quotationData) => {
+  const createInitialQuotation: Store["createInitialQuotation"] = useCallback((quotationData) => {
     const threadId = generateUniqueThreadId();
     const thread = createThread({ threadId, status: "QuotationCreated" });
     const quotation = createQuotation({
@@ -171,9 +166,9 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       content: quotationData,
     });
     return { thread, quotation };
-  };
+  }, []);
 
-  const handleDecline: Store["handleDecline"] = (threadId) => {
+  const handleDecline: Store["handleDecline"] = useCallback((threadId) => {
     setThreads((prev) =>
       prev.map((t) =>
         t.threadId === threadId
@@ -186,9 +181,9 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : t
       )
     );
-  };
+  }, []);
 
-  const undoDecline: Store["undoDecline"] = (threadId) => {
+  const undoDecline: Store["undoDecline"] = useCallback((threadId) => {
     setThreads((prev) =>
       prev.map((t) =>
         t.threadId === threadId
@@ -203,9 +198,9 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : t
       )
     );
-  };
+  }, []);
 
-  const createRevision: Store["createRevision"] = async (threadId, previousQuotationId, contentOverride) => {
+  const createRevision: Store["createRevision"] = useCallback(async (threadId, previousQuotationId, contentOverride) => {
     try {
       const { QuotationService } = await import("@/lib/quotationService");
       const { quotation } = await QuotationService.createRevision(threadId, previousQuotationId, contentOverride);
@@ -217,13 +212,12 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       )));
       return quotation;
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Failed to create revision', e);
       return undefined;
     }
-  };
+  }, []);
 
-  const handleAcceptance: Store["handleAcceptance"] = (quotationId, threadId, userMarksAsFinal) => {
+  const handleAcceptance: Store["handleAcceptance"] = useCallback((quotationId, threadId, userMarksAsFinal) => {
     setThreads((prev) =>
       prev.map((t) =>
         t.threadId === threadId
@@ -239,9 +233,9 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : t
       )
     );
-  };
+  }, []);
 
-  const setFinalQuotation: Store["setFinalQuotation"] = (threadId, quotationId) => {
+  const setFinalQuotation: Store["setFinalQuotation"] = useCallback((threadId, quotationId) => {
     setThreads((prev) =>
       prev.map((t) =>
         t.threadId === threadId
@@ -260,9 +254,9 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : t
       )
     );
-  };
+  }, []);
 
-  const updateQuotationContent: Store["updateQuotationContent"] = async (threadId, quotationId, content) => {
+  const updateQuotationContent: Store["updateQuotationContent"] = useCallback(async (threadId, quotationId, content) => {
     try {
       const { QuotationService } = await import("@/lib/quotationService");
       await QuotationService.updateQuotationContent(threadId, quotationId, content);
@@ -280,9 +274,9 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         )
       );
     }
-  };
+  }, []);
 
-  const deleteQuotation: Store["deleteQuotation"] = async (threadId, quotationId) => {
+  const deleteQuotation: Store["deleteQuotation"] = useCallback(async (threadId, quotationId) => {
     try {
       const { QuotationService } = await import("@/lib/quotationService");
       await QuotationService.deleteQuotation(threadId, quotationId);
@@ -295,14 +289,14 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         )
       );
     }
-  };
+  }, []);
 
-  const hasPurchaseOrder = (threadId: string) => {
+  const hasPurchaseOrder = useCallback((threadId: string) => {
     const t = threads.find((x) => x.threadId === threadId);
     return t?.documents.some((d) => d.type === "purchase_order");
-  };
+  }, [threads]);
 
-  const uploadPurchaseOrder: Store["uploadPurchaseOrder"] = (threadId, file, poId) => {
+  const uploadPurchaseOrder: Store["uploadPurchaseOrder"] = useCallback((threadId, file, poId) => {
     if (!hasAcceptedQuotation(threadId)) return undefined;
     const document = createDocument({
       threadId,
@@ -312,14 +306,14 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     updateThread(threadId, { poId, status: "PurchaseOrderUploaded", activeStep: 3 });
     return document;
-  };
+  }, [hasAcceptedQuotation]);
 
-  const createDeliveryNote: Store["createDeliveryNote"] = (threadId, deliveryNoteData) => {
+  const createDeliveryNote: Store["createDeliveryNote"] = useCallback((threadId, deliveryNoteData) => {
     if (!hasPurchaseOrder(threadId)) return undefined;
     return { ...deliveryNoteData, generatedAt: nowIso() };
-  };
+  }, [hasPurchaseOrder]);
 
-  const uploadSignedDeliveryNote: Store["uploadSignedDeliveryNote"] = (threadId, file) => {
+  const uploadSignedDeliveryNote: Store["uploadSignedDeliveryNote"] = useCallback((threadId, file) => {
     const unsignedDoc = createDocument({
       threadId,
       type: "delivery_note_unsigned",
@@ -333,14 +327,14 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       filepath: saveFile(file),
     });
     return { unsignedDoc, signedDoc };
-  };
+  }, []);
 
-  const hasSignedDeliveryNote = (threadId: string) => {
+  const hasSignedDeliveryNote = useCallback((threadId: string) => {
     const t = threads.find((x) => x.threadId === threadId);
     return t?.documents.some((d) => d.type === "delivery_note_signed");
-  };
+  }, [threads]);
 
-  const generateInvoice: Store["generateInvoice"] = (threadId) => {
+  const generateInvoice: Store["generateInvoice"] = useCallback((threadId) => {
     if (!hasSignedDeliveryNote(threadId)) return undefined;
     const t = threads.find((x) => x.threadId === threadId);
     const finalQuotation = getFinalQuotation(threadId);
@@ -358,11 +352,11 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       filename: file.name,
       filepath: saveFile(file),
     });
-  };
+  }, [hasSignedDeliveryNote, threads, getFinalQuotation]);
 
-  const completeThread: Store["completeThread"] = (threadId) => {
+  const completeThread: Store["completeThread"] = useCallback((threadId) => {
     updateThread(threadId, { status: "Completed" });
-  };
+  }, []);
 
   const value = useMemo<Store>(() => ({
     threads,
@@ -389,7 +383,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     uploadSignedDeliveryNote,
     generateInvoice,
     completeThread,
-  }), [threads, templates, createQuotationWithTemplate, createInitialQuotation, handleDecline, undoDecline, createRevision, handleAcceptance, setFinalQuotation, updateQuotationContent, uploadPurchaseOrder, createDeliveryNote, uploadSignedDeliveryNote, generateInvoice, completeThread]);
+  }), [threads, templates, createQuotationWithTemplate, createInitialQuotation, handleDecline, undoDecline, createRevision, handleAcceptance, setFinalQuotation, updateQuotationContent, deleteQuotation, uploadPurchaseOrder, createDeliveryNote, uploadSignedDeliveryNote, generateInvoice, completeThread]);
 
   return <QuotationContext.Provider value={value}>{children}</QuotationContext.Provider>;
 };

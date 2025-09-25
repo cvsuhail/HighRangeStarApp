@@ -4,12 +4,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuotationStore } from "@/context/QuotationStore";
 import HRSQuotationTemplate from "@/components/quotation/HRSQuotationTemplate";
-import type { HRSQuotationContent, Quotation } from "@/types/quotation";
+import type { HRSQuotationContent, Quotation, QuotationStatus } from "@/types/quotation";
+import type { Firestore } from "firebase/firestore";
 
 export default function QuotationThreadDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { threads, createRevision, setFinalQuotation, handleDecline, undoDecline, updateQuotationContent, deleteQuotation } = useQuotationStore();
+  const { threads, createRevision, handleDecline, undoDecline, deleteQuotation } = useQuotationStore();
 
   const threadId = String(params?.threadId || "");
   const storeThread = useMemo(() => threads.find(t => t.threadId === threadId), [threads, threadId]);
@@ -29,7 +30,7 @@ export default function QuotationThreadDetailPage() {
         const db = getFirestore();
         if (!db) return;
         const { doc, getDoc, collection, getDocs, query, orderBy } = await import("firebase/firestore");
-        const tRef = doc(db as any, "threads", threadId);
+        const tRef = doc(db as Firestore, "threads", threadId);
         const tSnap = await getDoc(tRef);
         if (tSnap.exists()) {
           const tData = tSnap.data() as Record<string, unknown>;
@@ -44,7 +45,7 @@ export default function QuotationThreadDetailPage() {
             id: qd.id,
             threadId,
             version: String(qv.version || "Quotation"),
-            status: String(qv.status || "pending") as any,
+            status: String(qv.status || "pending") as QuotationStatus,
             content: (qv.content as Record<string, unknown>) || {},
             createdAt: new Date().toISOString(), // for UI only; actual Timestamp shown via toDate below in list
             isFinal: Boolean(qv.isFinal),
@@ -52,7 +53,6 @@ export default function QuotationThreadDetailPage() {
         });
         if (mounted) setFsQuotations(list);
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.error("Failed to fetch thread detail:", e);
       } finally {
         if (mounted) setIsLoading(false);
@@ -67,7 +67,7 @@ export default function QuotationThreadDetailPage() {
       const db = getFirestore();
       if (!db) return;
       const { doc, getDoc, collection, getDocs, query, orderBy } = await import("firebase/firestore");
-      const tRef = doc(db as any, "threads", threadId);
+      const tRef = doc(db as Firestore, "threads", threadId);
       const tSnap = await getDoc(tRef);
       if (tSnap.exists()) {
         const tData = tSnap.data() as Record<string, unknown>;
@@ -82,7 +82,7 @@ export default function QuotationThreadDetailPage() {
           id: qd.id,
           threadId,
           version: String(qv.version || "Quotation"),
-          status: String(qv.status || "pending") as any,
+          status: String(qv.status || "pending") as QuotationStatus,
           content: (qv.content as Record<string, unknown>) || {},
           createdAt: new Date().toISOString(),
           isFinal: Boolean(qv.isFinal),
@@ -90,7 +90,6 @@ export default function QuotationThreadDetailPage() {
       });
       setFsQuotations(list);
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error("Failed to refresh thread data:", e);
     }
   };
@@ -107,7 +106,7 @@ export default function QuotationThreadDetailPage() {
     if (!exists) {
       setSelectedId(quotations[0]?.id ?? null);
     }
-  }, [quotations]);
+  }, [quotations, selectedId]);
   // Revision modal state
   const [isRevOpen, setIsRevOpen] = useState(false);
   const [revDraft, setRevDraft] = useState<HRSQuotationContent | null>(null);
@@ -132,21 +131,10 @@ export default function QuotationThreadDetailPage() {
   const canMarkAsDeclined = !isDeclinedThread;
   // Edit removed: latest selection no longer needed
 
-  // Stepper UI was moved to thread detail page. Keep quotation detail focused on versions list.
-  const selectedIndex = useMemo(() => {
-    const idx = quotations.findIndex(q => q.id === selectedQuotation?.id);
-    return idx >= 0 ? idx : 0;
-  }, [quotations, selectedQuotation]);
-
   // For stepper: show oldest -> newest to make progress sense
   const stepperQuotations = useMemo(() => {
     return quotations.slice().reverse();
   }, [quotations]);
-  const activeStepperIndex = useMemo(() => {
-    const id = selectedQuotation?.id;
-    const idx = stepperQuotations.findIndex(q => q.id === id);
-    return idx >= 0 ? idx : stepperQuotations.length - 1;
-  }, [stepperQuotations, selectedQuotation]);
 
   const onCreateRevision = async () => {
     if (!selectedQuotation) return;
@@ -230,7 +218,6 @@ export default function QuotationThreadDetailPage() {
 
   const onDownloadPdf = () => {
     if (!previewRef.current) return;
-    const refId = (content?.refID || thread?.userRefID || thread?.threadId || "quotation").toString();
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
     // Copy styles from current document so Tailwind and component CSS are available
@@ -290,9 +277,9 @@ export default function QuotationThreadDetailPage() {
             printWindow.document.close();
             printWindow.focus();
             printWindow.print();
-          } catch (_) {}
+          } catch {}
         });
-      } catch (_) {}
+      } catch {}
     };
     // Ensure we wait for the new document to be fully loaded
     if (printWindow.document.readyState === 'complete') {
@@ -378,8 +365,8 @@ export default function QuotationThreadDetailPage() {
                         </div>
                         <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">Ref: {(() => { const c = (q.content || {}) as Record<string, unknown>; const rv = c.refID as string | undefined; return rv || thread.userRefID || thread.threadId; })()}</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">{(() => {
-                          const anyQ: any = q as any;
-                          const ts = anyQ.createdAt && typeof anyQ.createdAt === 'object' && typeof anyQ.createdAt.toDate === 'function' ? anyQ.createdAt.toDate() : (typeof anyQ.createdAt === 'string' || typeof anyQ.createdAt === 'number' ? new Date(anyQ.createdAt) : undefined);
+                          const qData = q as { createdAt?: { toDate?: () => Date } | string | number };
+                          const ts = qData.createdAt && typeof qData.createdAt === 'object' && typeof qData.createdAt.toDate === 'function' ? qData.createdAt.toDate() : (typeof qData.createdAt === 'string' || typeof qData.createdAt === 'number' ? new Date(qData.createdAt) : undefined);
                           return ts ? ts.toLocaleString() : '';
                         })()}</div>
                       </div>

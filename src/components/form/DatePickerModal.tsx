@@ -15,7 +15,6 @@ export default function DatePickerModal({
   selectedDate, 
   onDateSelect 
 }: DatePickerModalProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMonth, setViewMonth] = useState(new Date());
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -24,7 +23,6 @@ export default function DatePickerModal({
     const year = viewMonth.getFullYear();
     const month = viewMonth.getMonth();
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
     const startDate = new Date(firstDay);
     startDate.setDate(startDate.getDate() - firstDay.getDay());
     

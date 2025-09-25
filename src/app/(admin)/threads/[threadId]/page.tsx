@@ -4,7 +4,8 @@ import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuotationStore } from "@/context/QuotationStore";
 import HRSQuotationTemplate from "@/components/quotation/HRSQuotationTemplate";
-import type { HRSQuotationContent, Quotation } from "@/types/quotation";
+import type { HRSQuotationContent, Quotation, QuotationStatus } from "@/types/quotation";
+import type { Firestore } from "firebase/firestore";
 
 export default function ThreadDetailPage() {
   const params = useParams();
@@ -28,7 +29,7 @@ export default function ThreadDetailPage() {
         const db = getFirestore();
         if (!db) return;
         const { doc, getDoc, collection, getDocs, query, orderBy } = await import("firebase/firestore");
-        const tRef = doc(db as any, "threads", threadId);
+        const tRef = doc(db as Firestore, "threads", threadId);
         const tSnap = await getDoc(tRef);
         if (tSnap.exists()) {
           const tData = tSnap.data() as Record<string, unknown>;
@@ -68,7 +69,7 @@ export default function ThreadDetailPage() {
             id: qd.id,
             threadId,
             version: String(qv.version || "Quotation"),
-            status: String(qv.status || "pending") as any,
+            status: String(qv.status || "pending") as QuotationStatus,
             content: (qv.content as Record<string, unknown>) || {},
             createdAt: new Date().toISOString(),
             isFinal: Boolean(qv.isFinal),
@@ -76,7 +77,6 @@ export default function ThreadDetailPage() {
         });
         if (mounted) setFsQuotations(list);
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.error("Failed to fetch thread detail:", e);
       } finally {
         if (mounted) setIsLoading(false);
@@ -125,7 +125,6 @@ export default function ThreadDetailPage() {
       setFsQuotations((prev) => prev.map(q => q.id === latest.id ? { ...q, isFinal: true, status: 'accepted' } : q));
       setActiveStep(1);
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Failed to mark final:', e);
     }
   };
@@ -218,7 +217,6 @@ export default function ThreadDetailPage() {
                       key={s.key}
                       onClick={() => { if (canNavigate) setActiveStep(idx); }}
                       className={`flex items-start gap-3 select-none ${canNavigate ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-lg -mx-2 px-2 py-1 transition-colors' : 'cursor-not-allowed opacity-60'}`}
-                      aria-disabled={!canNavigate}
                     >
                       <div className="flex flex-col items-center">
                         <div className={`h-8 w-8 rounded-full grid place-items-center text-sm font-semibold transition-all ${

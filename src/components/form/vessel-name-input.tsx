@@ -256,7 +256,7 @@ export function VesselNameInput({
           {suggestions.map((vessel, index) => (
             <div
               key={vessel.id}
-              ref={el => suggestionRefs.current[index] = el}
+              ref={(el) => { suggestionRefs.current[index] = el; }}
               className={`px-3 py-2 cursor-pointer text-sm ${
                 index === selectedIndex
                   ? 'bg-brand-100 dark:bg-brand-900 text-brand-900 dark:text-brand-100'

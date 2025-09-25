@@ -52,7 +52,6 @@ export default function ThreadsPage() {
         }
         if (mounted) setRows(out);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error("Failed to fetch threads", err);
         if (mounted) setRows([]);
       } finally {
@@ -104,8 +103,8 @@ export default function ThreadsPage() {
                 const status = latest?.status || 'pending';
                 const createdStr = (() => {
                   const ca = thread?.createdAt as unknown as { toDate?: () => Date } | string | number | undefined;
-                  const d = (ca && typeof ca === 'object' && 'toDate' in ca && typeof (ca as any).toDate === 'function')
-                    ? (ca as { toDate: () => Date }).toDate()
+                  const d = (ca && typeof ca === 'object' && 'toDate' in ca && typeof ca.toDate === 'function')
+                    ? ca.toDate()
                     : (typeof ca === 'string' || typeof ca === 'number')
                       ? new Date(ca)
                       : undefined;
@@ -113,8 +112,8 @@ export default function ThreadsPage() {
                 })();
                 const updatedStr = (() => {
                   const ua = thread?.updatedAt as unknown as { toDate?: () => Date } | string | number | undefined;
-                  const d = (ua && typeof ua === 'object' && 'toDate' in ua && typeof (ua as any).toDate === 'function')
-                    ? (ua as { toDate: () => Date }).toDate()
+                  const d = (ua && typeof ua === 'object' && 'toDate' in ua && typeof ua.toDate === 'function')
+                    ? ua.toDate()
                     : (typeof ua === 'string' || typeof ua === 'number')
                       ? new Date(ua)
                       : undefined;

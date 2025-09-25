@@ -16,7 +16,6 @@ interface CreateQuotationFormProps {
 export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuotationFormProps) {
   const { createQuotationWithTemplate, getNextRefID } = useQuotationStore();
   const [baseRef, setBaseRef] = useState("");
-  const [vesselCode, setVesselCode] = useState("");
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [formData, setFormData] = useState<CreateQuotationData>({
     userRefID: "",
@@ -364,7 +363,6 @@ export default function CreateQuotationForm({ onSuccess, onCancel }: CreateQuota
                   value={formData.hrsContent!.vesselName}
                   onChange={(value) => handleHRSChange('vesselName', value)}
                   onVesselParsed={(parsed) => {
-                    setVesselCode(parsed.code || "");
                     // Update displayed ref to include parsed vessel code
                     setFormData(prev => {
                       const mergedRef = formatRefWithVessel(baseRef || prev.userRefID, parsed.code || "");

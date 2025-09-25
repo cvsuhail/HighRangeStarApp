@@ -2,7 +2,6 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuotationStore } from "@/context/QuotationStore";
 // Removed unused ComponentCard import
 import CreateQuotationForm from "@/components/quotation/CreateQuotationForm";
 
@@ -14,7 +13,6 @@ const statusFilters = [
 ] as const;
 
 export default function QuotationsListPage() {
-  const { threads } = useQuotationStore();
   const [filter, setFilter] = useState<(typeof statusFilters)[number]["key"]>("all");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const router = useRouter();
@@ -65,7 +63,6 @@ export default function QuotationsListPage() {
         }
         if (mounted) setRows(out);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error("Failed to fetch quotations", err);
         if (mounted) setRows([]);
       } finally {
