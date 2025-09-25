@@ -34,7 +34,7 @@ export default function QuotationsListPage() {
           return;
         }
         const { collection, getDocs, query, orderBy, limit, doc } = await import("firebase/firestore");
-        const threadsCol = collection(db, "quotationThreads");
+        const threadsCol = collection(db, "threads");
         const snap = await getDocs(query(threadsCol, orderBy("createdAt", "desc")));
         const out: Array<{ thread: { threadId: string; userRefID?: string; status?: string; clientName?: string; createdAt?: unknown; updatedAt?: unknown }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
         for (const d of snap.docs) {
@@ -91,7 +91,7 @@ export default function QuotationsListPage() {
           const db = getFirestore();
           if (!db) return;
           const { collection, getDocs, query, orderBy, limit, doc } = await import("firebase/firestore");
-          const threadsCol = collection(db, "quotationThreads");
+          const threadsCol = collection(db, "threads");
           const snap = await getDocs(query(threadsCol, orderBy("createdAt", "desc")));
           const out: Array<{ thread: { threadId: string; userRefID?: string; status?: string; clientName?: string; createdAt?: unknown; updatedAt?: unknown }; latest?: { version: string; status: string; content: Record<string, unknown>; createdAt?: string | number; isFinal?: boolean } }> = [];
           for (const d of snap.docs) {

@@ -310,7 +310,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       filename: file.name,
       filepath: saveFile(file),
     });
-    updateThread(threadId, { poId });
+    updateThread(threadId, { poId, status: "PurchaseOrderUploaded", activeStep: 3 });
     return document;
   };
 

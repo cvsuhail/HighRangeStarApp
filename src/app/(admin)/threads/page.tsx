@@ -26,7 +26,7 @@ export default function ThreadsPage() {
           return;
         }
         const { collection, getDocs, query, orderBy, limit, doc } = await import("firebase/firestore");
-        const threadsCol = collection(db, "quotationThreads");
+        const threadsCol = collection(db, "threads");
         const snap = await getDocs(query(threadsCol, orderBy("createdAt", "desc")));
         const out: Row[] = [];
         for (const d of snap.docs) {

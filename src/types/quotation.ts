@@ -3,7 +3,7 @@ export type ThreadStatus =
   | 'QuotationFinalized'
   | 'QuotationDeclined'
   | 'QuotationAccepted'
-  | 'PurchaseOrderRecieved'
+  | 'PurchaseOrderUploaded'
   | 'WorkStarted'
   | 'DeliveryNoteCreated'
   | 'UploadedSignedDeliveryNote'

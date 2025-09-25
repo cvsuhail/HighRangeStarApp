@@ -11,10 +11,11 @@ import {
   updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
-import { getFirestore } from './firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getFirestore, getFirebaseStorage } from './firebase';
 import type { HRSQuotationContent, Quotation, Thread } from '@/types/quotation';
 
-const THREADS_COLLECTION = 'quotationThreads';
+const THREADS_COLLECTION = 'threads';
 
 export type CreateQuotationPayload = {
   userRefID: string; // required; treat as external thread id as well
@@ -232,6 +233,89 @@ export class QuotationService {
       poId,
       updatedAt: serverTimestamp(),
     });
+  }
+
+  /**
+   * Upload a file to Firebase Storage and return the download URL
+   */
+  static async uploadFile(file: File, path: string): Promise<string> {
+    const storage = getFirebaseStorage();
+    if (!storage) throw new Error('Firebase Storage not initialized');
+    
+    const storageRef = ref(storage, path);
+    const snapshot = await uploadBytes(storageRef, file);
+    return await getDownloadURL(snapshot.ref);
+  }
+
+  /**
+   * Upload a Purchase Order PDF file and update thread with PoID
+   */
+  static async uploadPurchaseOrder(
+    threadId: string, 
+    file: File, 
+    poId: string
+  ): Promise<{ downloadURL: string; documentId: string }> {
+    // Validate file type
+    if (file.type !== 'application/pdf') {
+      throw new Error('Only PDF files are allowed for Purchase Orders');
+    }
+
+    const db = this.getDb();
+    
+    // Create document entry first (renamed subcollection: purchaseOrders)
+    const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
+    const purchaseOrdersCol = collection(threadRef, 'purchaseOrders');
+    const docRef = await addDoc(purchaseOrdersCol, {
+      type: 'purchase_order',
+      filename: file.name,
+      filepath: '', // Will be updated after upload
+      uploadedAt: serverTimestamp(),
+    });
+
+    // Upload file to storage
+    const filePath = `purchase-orders/${threadId}/${docRef.id}/${file.name}`;
+    const downloadURL = await this.uploadFile(file, filePath);
+
+    // Update document with file path
+    await updateDoc(doc(purchaseOrdersCol, docRef.id), {
+      filepath: downloadURL,
+    });
+
+    // Update thread with PoID and move to next step
+    await updateDoc(threadRef, {
+      poId,
+      activeStep: 3, // Step 3: Create Delivery Note
+      status: 'PurchaseOrderUploaded',
+      updatedAt: serverTimestamp(),
+    });
+
+    return { downloadURL, documentId: docRef.id };
+  }
+
+  /** Replace an existing purchase order file by uploading a new PDF and updating the document */
+  static async replacePurchaseOrder(
+    threadId: string,
+    documentId: string,
+    file: File
+  ): Promise<{ downloadURL: string }>{
+    if (file.type !== 'application/pdf') {
+      throw new Error('Only PDF files are allowed for Purchase Orders');
+    }
+
+    const db = this.getDb();
+    const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
+    const purchaseOrdersCol = collection(threadRef, 'purchaseOrders');
+
+    const filePath = `purchase-orders/${threadId}/${documentId}/${file.name}`;
+    const downloadURL = await this.uploadFile(file, filePath);
+
+    await updateDoc(doc(purchaseOrdersCol, documentId), {
+      filename: file.name,
+      filepath: downloadURL,
+      uploadedAt: serverTimestamp(),
+    });
+
+    return { downloadURL };
   }
 
   /** Update a quotation content in Firestore */

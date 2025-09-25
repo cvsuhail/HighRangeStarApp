@@ -29,7 +29,7 @@ export default function QuotationThreadDetailPage() {
         const db = getFirestore();
         if (!db) return;
         const { doc, getDoc, collection, getDocs, query, orderBy } = await import("firebase/firestore");
-        const tRef = doc(db as any, "quotationThreads", threadId);
+        const tRef = doc(db as any, "threads", threadId);
         const tSnap = await getDoc(tRef);
         if (tSnap.exists()) {
           const tData = tSnap.data() as Record<string, unknown>;
@@ -67,7 +67,7 @@ export default function QuotationThreadDetailPage() {
       const db = getFirestore();
       if (!db) return;
       const { doc, getDoc, collection, getDocs, query, orderBy } = await import("firebase/firestore");
-      const tRef = doc(db as any, "quotationThreads", threadId);
+      const tRef = doc(db as any, "threads", threadId);
       const tSnap = await getDoc(tRef);
       if (tSnap.exists()) {
         const tData = tSnap.data() as Record<string, unknown>;

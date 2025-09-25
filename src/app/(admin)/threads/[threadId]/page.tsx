@@ -16,7 +16,7 @@ export default function ThreadDetailPage() {
   const storeQuotations = React.useMemo(() => storeThread?.quotations ?? [], [storeThread]);
 
   const [isLoading, setIsLoading] = React.useState(true);
-  const [fsThread, setFsThread] = React.useState<{ threadId: string; userRefID?: string; status?: string; activeStep?: number; clientName?: string; createdAt?: unknown; updatedAt?: unknown; poId?: string; documents?: Array<{ type: string }> } | null>(null);
+  const [fsThread, setFsThread] = React.useState<{ threadId: string; userRefID?: string; status?: string; activeStep?: number; clientName?: string; createdAt?: unknown; updatedAt?: unknown; poId?: string; documents?: Array<{ type: string; id: string; filename: string; filepath: string }> } | null>(null);
   const [fsQuotations, setFsQuotations] = React.useState<Quotation[]>([]);
 
   React.useEffect(() => {
@@ -28,18 +28,35 @@ export default function ThreadDetailPage() {
         const db = getFirestore();
         if (!db) return;
         const { doc, getDoc, collection, getDocs, query, orderBy } = await import("firebase/firestore");
-        const tRef = doc(db as any, "quotationThreads", threadId);
+        const tRef = doc(db as any, "threads", threadId);
         const tSnap = await getDoc(tRef);
         if (tSnap.exists()) {
           const tData = tSnap.data() as Record<string, unknown>;
+          
+          // Fetch purchase orders (renamed from documents)
+          const purchaseOrdersCol = collection(tRef, "purchaseOrders");
+          const documentsSnap = await getDocs(query(purchaseOrdersCol, orderBy("uploadedAt", "desc")));
+          const documents: Array<{ type: string; id: string; filename: string; filepath: string }> = [];
+          documentsSnap.forEach(docSnap => {
+            const docData = docSnap.data() as Record<string, unknown>;
+            documents.push({
+              id: docSnap.id,
+              type: String(docData.type || ''),
+              filename: String(docData.filename || ''),
+              filepath: String(docData.filepath || ''),
+            });
+          });
+          
           if (mounted) setFsThread({
             threadId: (tData.threadId as string) || tSnap.id,
             userRefID: (tData.userRefID as string) || undefined,
             status: (tData.status as string) || undefined,
             activeStep: (tData.activeStep as number),
             clientName: (tData.clientName as string) || undefined,
+            poId: (tData.poId as string) || undefined,
             createdAt: tData.createdAt,
             updatedAt: tData.updatedAt,
+            documents,
           });
         }
         const qCol = collection(tRef, "quotations");
@@ -113,6 +130,8 @@ export default function ThreadDetailPage() {
     }
   };
 
+  // Note: Uploading Purchase Orders is intentionally disabled on this page.
+
   const steps = [
     { key: "CreateQuotation", label: "Create Quotation" },
     { key: "UploadPurchaseOrder", label: "Upload Purchase Order" },
@@ -170,13 +189,13 @@ export default function ThreadDetailPage() {
                   
                   // Define completion criteria for each step
                   const getStepCompletionStatus = (stepIndex: number) => {
-                    // Use storeThread for properties that might not be in fsThread
-                    const threadData = storeThread || thread;
+                    // Use fsThread for properties that might not be in storeThread
+                    const threadData = thread || storeThread;
                     switch (stepIndex) {
                       case 0: // Create Quotation
                         return latest?.isFinal === true;
                       case 1: // Upload Purchase Order
-                        return threadData?.poId !== undefined;
+                        return threadData?.poId !== undefined && threadData?.documents?.some((d: { type: string }) => d.type === 'purchase_order') === true;
                       case 2: // Create Delivery Note
                         return threadData?.documents?.some((d: { type: string }) => d.type === 'delivery_note_unsigned') === true;
                       case 3: // Upload Signed Delivery Note
@@ -279,7 +298,26 @@ export default function ThreadDetailPage() {
             </div>
           )}
 
-          {activeStep !== 0 && (
+          {activeStep === 1 && (
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">Upload Purchase Order</div>
+                {thread?.poId && (
+                  <span className="text-xs px-2 py-1 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                    PoID: {thread.poId}
+                  </span>
+                )}
+              </div>
+              <div className="p-6">
+                <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-900/50 p-6 text-center">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white mb-1">This page is view-only</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Upload Purchase Order from the Purchase Orders screen.</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeStep !== 0 && activeStep !== 1 && (
             <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 p-8 text-center">
               <div className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{steps[activeStep].label}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">This step UI will be implemented next.</div>
