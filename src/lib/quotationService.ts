@@ -248,13 +248,13 @@ export class QuotationService {
   }
 
   /**
-   * Upload a Purchase Order PDF file and update thread with PoID
+   * Upload a Purchase Order PDF file to Firebase Storage and update thread with PoID
    */
   static async uploadPurchaseOrder(
     threadId: string, 
     file: File, 
     poId: string
-  ): Promise<{ downloadURL: string; documentId: string }> {
+  ): Promise<{ documentId: string; filepath: string }> {
     // Validate file type
     if (file.type !== 'application/pdf') {
       throw new Error('Only PDF files are allowed for Purchase Orders');
@@ -272,32 +272,41 @@ export class QuotationService {
       uploadedAt: serverTimestamp(),
     });
 
-    // Upload file to storage
-    const filePath = `purchase-orders/${threadId}/${docRef.id}/${file.name}`;
-    const downloadURL = await this.uploadFile(file, filePath);
+    try {
+      // Upload file to Firebase Storage
+      const storagePath = `purchaseOrders/${threadId}/PO_${poId}_${file.name}`;
+      const downloadUrl = await this.uploadFile(file, storagePath);
 
-    // Update document with file path
-    await updateDoc(doc(purchaseOrdersCol, docRef.id), {
-      filepath: downloadURL,
-    });
+      // Update document with storage information
+      await updateDoc(doc(purchaseOrdersCol, docRef.id), {
+        filepath: downloadUrl,
+      });
 
-    // Update thread with PoID and move to next step
-    await updateDoc(threadRef, {
-      poId,
-      activeStep: 3, // Step 3: Create Delivery Note
-      status: 'PurchaseOrderUploaded',
-      updatedAt: serverTimestamp(),
-    });
+      // Update thread with PoID and move to next step
+      await updateDoc(threadRef, {
+        poId,
+        activeStep: 3, // Step 3: Create Delivery Note
+        status: 'PurchaseOrderUploaded',
+        updatedAt: serverTimestamp(),
+      });
 
-    return { downloadURL, documentId: docRef.id };
+      return { 
+        documentId: docRef.id,
+        filepath: downloadUrl,
+      };
+    } catch (error) {
+      // Clean up the document entry if upload fails
+      await deleteDoc(doc(purchaseOrdersCol, docRef.id));
+      throw error;
+    }
   }
 
-  /** Replace an existing purchase order file by uploading a new PDF and updating the document */
+  /** Replace an existing purchase order file by uploading a new PDF to Firebase Storage and updating the document */
   static async replacePurchaseOrder(
     threadId: string,
     documentId: string,
     file: File
-  ): Promise<{ downloadURL: string }>{
+  ): Promise<{ filepath: string }>{
     if (file.type !== 'application/pdf') {
       throw new Error('Only PDF files are allowed for Purchase Orders');
     }
@@ -306,16 +315,25 @@ export class QuotationService {
     const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
     const purchaseOrdersCol = collection(threadRef, 'purchaseOrders');
 
-    const filePath = `purchase-orders/${threadId}/${documentId}/${file.name}`;
-    const downloadURL = await this.uploadFile(file, filePath);
+    // Get existing document to get PO ID for filename
+    const docRef = doc(purchaseOrdersCol, documentId);
+    const docSnap = await getDoc(docRef);
+    const existingData = docSnap.data();
+    
+    // Upload file to Firebase Storage
+    const poIdForName = (existingData as { poId?: string } | undefined)?.poId || 'unknown';
+    const storagePath = `purchaseOrders/${threadId}/PO_${poIdForName}_${file.name}`;
+    const downloadUrl = await this.uploadFile(file, storagePath);
 
-    await updateDoc(doc(purchaseOrdersCol, documentId), {
+    await updateDoc(docRef, {
       filename: file.name,
-      filepath: downloadURL,
+      filepath: downloadUrl,
       uploadedAt: serverTimestamp(),
     });
 
-    return { downloadURL };
+    return { 
+      filepath: downloadUrl,
+    };
   }
 
   /** Update a quotation content in Firestore */

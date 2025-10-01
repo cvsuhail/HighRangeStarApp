@@ -9,7 +9,7 @@ export type ThreadStatus =
   | 'UploadedSignedDeliveryNote'
   | 'InvoiceCreated'
   | 'Completed';
-export type QuotationStatus = 'pending' | 'accepted' | 'declined';
+export type QuotationStatus = 'pending' | 'accepted' | 'declined' | 'reverseQuotation' | 'quotationDeclined' | 'markAsFinalQuotation';
 export type DocumentType = 'purchase_order' | 'delivery_note_unsigned' | 'delivery_note_signed' | 'invoice';
 
 export type Thread = {
@@ -79,6 +79,29 @@ export type HRSQuotationContent = {
   paymentTerms: string;
   mobileNumber: string;
   email: string;
+};
+
+// High Range Star specific delivery note content
+export type HRSDeliveryNoteItem = {
+  slNo: string;
+  description: string;
+  orderQty: number;
+  deliveredQty: number;
+};
+
+export type HRSDeliveryNoteContent = {
+  partyName: string;
+  partyAddress: string;
+  attn?: string;
+  tel?: string;
+  orderDate: string; // ISO string
+  lpoNo?: string;
+  deliveryNoteNo: string;
+  dispatchDate: string; // ISO string
+  projectCode: string; // e.g., "HALUL-45"
+  items: HRSDeliveryNoteItem[];
+  receivedByName?: string;
+  dateReceived?: string;
 };
 
 export type CreateQuotationData = {

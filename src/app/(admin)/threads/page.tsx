@@ -130,8 +130,9 @@ export default function ThreadsPage() {
                     <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{refId}</td>
                     <td className="py-3 pr-4">
                       <span className={`px-2 py-1 text-xs rounded-full ${
-                        status === 'accepted' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' :
-                        status === 'declined' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' :
+                        status === 'accepted' || status === 'markAsFinalQuotation' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' :
+                        status === 'declined' || status === 'quotationDeclined' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' :
+                        status === 'reverseQuotation' ? 'bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400' :
                         'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400'
                       }`}>{status}</span>
                     </td>

@@ -21,13 +21,17 @@ type Store = {
   createInitialQuotation: (quotationData: Record<string, unknown>) => { thread: Thread; quotation: Quotation };
   handleDecline: (threadId: string) => void;
   undoDecline: (threadId: string) => void;
+  createReverseQuotation: (threadId: string) => Promise<Quotation | undefined>;
+  markQuotationDeclined: (threadId: string, quotationId: string) => void;
   createRevision: (threadId: string, previousQuotationId: string, contentOverride?: Record<string, unknown>) => Promise<Quotation | undefined>;
   handleAcceptance: (quotationId: string, threadId: string, userMarksAsFinal?: boolean) => void;
   setFinalQuotation: (threadId: string, quotationId: string) => void;
   updateQuotationContent: (threadId: string, quotationId: string, content: Record<string, unknown>) => Promise<void>;
   deleteQuotation: (threadId: string, quotationId: string) => Promise<void>;
   uploadPurchaseOrder: (threadId: string, file: File, poId: string) => Document | undefined;
+  markPurchaseOrderUploaded: (threadId: string, poId: string) => void;
   createDeliveryNote: (threadId: string, data: Record<string, unknown>) => Record<string, unknown> | undefined;
+  createDeliveryNoteWithHRS: (threadId: string, hrsContent: Record<string, unknown>) => Promise<Document | undefined>;
   uploadSignedDeliveryNote: (threadId: string, file: File) => { unsignedDoc: Document; signedDoc: Document } | undefined;
   generateInvoice: (threadId: string) => Document | undefined;
   completeThread: (threadId: string) => void;
@@ -200,6 +204,52 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     );
   }, []);
 
+  const createReverseQuotation: Store["createReverseQuotation"] = useCallback(async (threadId) => {
+    try {
+      const { QuotationService } = await import("@/lib/quotationService");
+      const latestQuotation = threads.find(t => t.threadId === threadId)?.quotations[0];
+      if (!latestQuotation) return undefined;
+      
+      const { quotation } = await QuotationService.createRevision(threadId, latestQuotation.id);
+      
+      // Update local state
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.threadId === threadId
+            ? {
+                ...t,
+                updatedAt: nowIso(),
+                quotations: t.quotations.map((q) =>
+                  q.id === latestQuotation.id ? { ...q, status: "reverseQuotation" as QuotationStatus } : q
+                ).concat([quotation]),
+              }
+            : t
+        )
+      );
+      return quotation;
+    } catch (e) {
+      console.error('Failed to create reverse quotation', e);
+      return undefined;
+    }
+  }, [threads]);
+
+  const markQuotationDeclined: Store["markQuotationDeclined"] = useCallback((threadId, quotationId) => {
+    setThreads((prev) =>
+      prev.map((t) =>
+        t.threadId === threadId
+          ? {
+              ...t,
+              status: "QuotationDeclined",
+              updatedAt: nowIso(),
+              quotations: t.quotations.map((q) =>
+                q.id === quotationId ? { ...q, status: "quotationDeclined" as QuotationStatus } : q
+              ),
+            }
+          : t
+      )
+    );
+  }, []);
+
   const createRevision: Store["createRevision"] = useCallback(async (threadId, previousQuotationId, contentOverride) => {
     try {
       const { QuotationService } = await import("@/lib/quotationService");
@@ -293,7 +343,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const hasPurchaseOrder = useCallback((threadId: string) => {
     const t = threads.find((x) => x.threadId === threadId);
-    return t?.documents.some((d) => d.type === "purchase_order");
+    return t?.documents.some((d) => d.type === "purchase_order") || t?.poId !== undefined;
   }, [threads]);
 
   const uploadPurchaseOrder: Store["uploadPurchaseOrder"] = useCallback((threadId, file, poId) => {
@@ -308,9 +358,37 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return document;
   }, [hasAcceptedQuotation]);
 
+  const markPurchaseOrderUploaded: Store["markPurchaseOrderUploaded"] = useCallback((threadId, poId) => {
+    if (!hasAcceptedQuotation(threadId)) return;
+    updateThread(threadId, { poId, status: "PurchaseOrderUploaded", activeStep: 3 });
+  }, [hasAcceptedQuotation]);
+
   const createDeliveryNote: Store["createDeliveryNote"] = useCallback((threadId, deliveryNoteData) => {
     if (!hasPurchaseOrder(threadId)) return undefined;
     return { ...deliveryNoteData, generatedAt: nowIso() };
+  }, [hasPurchaseOrder]);
+
+  const createDeliveryNoteWithHRS: Store["createDeliveryNoteWithHRS"] = useCallback(async (threadId, hrsContent) => {
+    if (!hasPurchaseOrder(threadId)) return undefined;
+    try {
+      // Generate delivery note number
+      const deliveryNoteNo = `HRS-SR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+      
+      const document = createDocument({
+        threadId,
+        type: "delivery_note_unsigned",
+        filename: `${deliveryNoteNo}.pdf`,
+        filepath: `/mock/${threadId}/delivery_note_unsigned.pdf`,
+      });
+      
+      // Update thread status
+      updateThread(threadId, { status: "DeliveryNoteCreated", activeStep: 4 });
+      
+      return document;
+    } catch (e) {
+      console.error('Failed to create delivery note', e);
+      return undefined;
+    }
   }, [hasPurchaseOrder]);
 
   const uploadSignedDeliveryNote: Store["uploadSignedDeliveryNote"] = useCallback((threadId, file) => {
@@ -373,17 +451,21 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     createInitialQuotation,
     handleDecline,
     undoDecline,
+    createReverseQuotation,
+    markQuotationDeclined,
     createRevision,
     handleAcceptance,
     setFinalQuotation,
     updateQuotationContent,
     deleteQuotation,
     uploadPurchaseOrder,
+    markPurchaseOrderUploaded,
     createDeliveryNote,
+    createDeliveryNoteWithHRS,
     uploadSignedDeliveryNote,
     generateInvoice,
     completeThread,
-  }), [threads, templates, createQuotationWithTemplate, createInitialQuotation, handleDecline, undoDecline, createRevision, handleAcceptance, setFinalQuotation, updateQuotationContent, deleteQuotation, uploadPurchaseOrder, createDeliveryNote, uploadSignedDeliveryNote, generateInvoice, completeThread]);
+  }), [threads, templates, createQuotationWithTemplate, createInitialQuotation, handleDecline, undoDecline, createReverseQuotation, markQuotationDeclined, createRevision, handleAcceptance, setFinalQuotation, updateQuotationContent, deleteQuotation, uploadPurchaseOrder, markPurchaseOrderUploaded, createDeliveryNote, createDeliveryNoteWithHRS, uploadSignedDeliveryNote, generateInvoice, completeThread]);
 
   return <QuotationContext.Provider value={value}>{children}</QuotationContext.Provider>;
 };
