@@ -239,12 +239,27 @@ export class QuotationService {
    * Upload a file to Firebase Storage and return the download URL
    */
   static async uploadFile(file: File, path: string): Promise<string> {
+    console.log('QuotationService.uploadFile called:', { fileName: file.name, path });
+    
     const storage = getFirebaseStorage();
-    if (!storage) throw new Error('Firebase Storage not initialized');
+    if (!storage) {
+      console.error('Firebase Storage not initialized');
+      throw new Error('Firebase Storage not initialized');
+    }
+    
+    console.log('Firebase Storage initialized:', storage);
     
     const storageRef = ref(storage, path);
+    console.log('Storage ref created:', storageRef);
+    
+    console.log('Starting upload...');
     const snapshot = await uploadBytes(storageRef, file);
-    return await getDownloadURL(snapshot.ref);
+    console.log('Upload complete, getting download URL...');
+    
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    console.log('Download URL obtained:', downloadURL);
+    
+    return downloadURL;
   }
 
   /**
@@ -255,13 +270,27 @@ export class QuotationService {
     file: File, 
     poId: string
   ): Promise<{ documentId: string; filepath: string }> {
+    console.log('QuotationService.uploadPurchaseOrder called:', {
+      threadId,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      poId
+    });
+
     // Validate file type
     if (file.type !== 'application/pdf') {
+      console.error('Invalid file type:', file.type);
       throw new Error('Only PDF files are allowed for Purchase Orders');
     }
 
     const db = this.getDb();
+    if (!db) {
+      console.error('Firestore not initialized');
+      throw new Error('Firestore not initialized');
+    }
     
+    console.log('Creating document entry...');
     // Create document entry first (renamed subcollection: purchaseOrders)
     const threadRef = doc(collection(db, THREADS_COLLECTION), threadId);
     const purchaseOrdersCol = collection(threadRef, 'purchaseOrders');
@@ -271,18 +300,24 @@ export class QuotationService {
       filepath: '', // Will be updated after upload
       uploadedAt: serverTimestamp(),
     });
+    console.log('Document created with ID:', docRef.id);
 
     try {
       // Upload file to Firebase Storage
       const storagePath = `purchaseOrders/${threadId}/PO_${poId}_${file.name}`;
+      console.log('Storage path:', storagePath);
+      
       const downloadUrl = await this.uploadFile(file, storagePath);
+      console.log('File uploaded successfully, download URL:', downloadUrl);
 
       // Update document with storage information
+      console.log('Updating document with download URL...');
       await updateDoc(doc(purchaseOrdersCol, docRef.id), {
         filepath: downloadUrl,
       });
 
       // Update thread with PoID and move to next step
+      console.log('Updating thread status...');
       await updateDoc(threadRef, {
         poId,
         activeStep: 3, // Step 3: Create Delivery Note
@@ -290,11 +325,13 @@ export class QuotationService {
         updatedAt: serverTimestamp(),
       });
 
+      console.log('Upload completed successfully');
       return { 
         documentId: docRef.id,
         filepath: downloadUrl,
       };
     } catch (error) {
+      console.error('Upload failed, cleaning up document:', error);
       // Clean up the document entry if upload fails
       await deleteDoc(doc(purchaseOrdersCol, docRef.id));
       throw error;

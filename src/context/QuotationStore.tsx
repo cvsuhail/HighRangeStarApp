@@ -368,7 +368,7 @@ export const QuotationProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ...deliveryNoteData, generatedAt: nowIso() };
   }, [hasPurchaseOrder]);
 
-  const createDeliveryNoteWithHRS: Store["createDeliveryNoteWithHRS"] = useCallback(async (threadId, hrsContent) => {
+  const createDeliveryNoteWithHRS: Store["createDeliveryNoteWithHRS"] = useCallback(async (threadId) => {
     if (!hasPurchaseOrder(threadId)) return undefined;
     try {
       // Generate delivery note number

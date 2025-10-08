@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Purchase Order Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+        .file-info {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .upload-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .upload-btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Purchase Order Upload</h1>
+    <p>This is a simple test page to verify that the Firebase Storage upload functionality works correctly.</p>
+    
+    <div class="upload-area" id="uploadArea">
+        <p>Drag and drop a PDF file here, or click to select</p>
+        <input type="file" id="fileInput" accept="application/pdf" style="display: none;">
+    </div>
+    
+    <div id="fileInfo" class="file-info" style="display: none;">
+        <h3>Selected File:</h3>
+        <p><strong>Name:</strong> <span id="fileName"></span></p>
+        <p><strong>Size:</strong> <span id="fileSize"></span></p>
+        <p><strong>Type:</strong> <span id="fileType"></span></p>
+    </div>
+    
+    <button id="uploadBtn" class="upload-btn" disabled>Upload to Firebase Storage</button>
+    
+    <div id="status"></div>
+    
+    <div id="result" style="display: none;">
+        <h3>Upload Result:</h3>
+        <p><strong>Download URL:</strong> <a id="downloadUrl" href="#" target="_blank">View File</a></p>
+    </div>
+
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+        
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: 'AIzaSyA7RwwQT7XD1Sc8pMfV5LDvuFxX6pPCFaI',
+            authDomain: 'hrstar-270fa.firebaseapp.com',
+            projectId: 'hrstar-270fa',
+            storageBucket: 'hrstar-270fa.firebasestorage.app',
+            messagingSenderId: '942174252213',
+            appId: '1:942174252213:web:e590fa77c193645e5022fc',
+            measurementId: 'G-V60VN8GW2Y',
+        };
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const storage = getStorage(app);
+        
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const fileType = document.getElementById('fileType');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        const downloadUrl = document.getElementById('downloadUrl');
+        
+        let selectedFile = null;
+        
+        // File selection handlers
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+        
+        function handleFileSelect(file) {
+            if (file.type !== 'application/pdf') {
+                showStatus('Please select a PDF file.', 'error');
+                return;
+            }
+            
+            selectedFile = file;
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileType.textContent = file.type;
+            fileInfo.style.display = 'block';
+            uploadBtn.disabled = false;
+            showStatus('File selected. Ready to upload.', 'success');
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        uploadBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            
+            uploadBtn.disabled = true;
+            showStatus('Uploading...', 'success');
+            
+            try {
+                // Create a test path
+                const testThreadId = 'test-thread-' + Date.now();
+                const storagePath = `purchaseOrders/${testThreadId}/test_${selectedFile.name}`;
+                const storageRef = ref(storage, storagePath);
+                
+                // Upload file
+                const snapshot = await uploadBytes(storageRef, selectedFile);
+                const downloadURL = await getDownloadURL(snapshot.ref);
+                
+                // Show result
+                downloadUrl.href = downloadURL;
+                downloadUrl.textContent = downloadURL;
+                result.style.display = 'block';
+                showStatus('Upload successful!', 'success');
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                showStatus(`Upload failed: ${error.message}`, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
